@@ -53,7 +53,7 @@ export class BlossomClient {
   private publicKey?: string;
 
   constructor(
-    serverUrl: string = 'https://nostr.checkit.ssi.arrakis.tools/upload',
+    serverUrl: string = 'https://blossom.primal.net',
     authToken?: string,
     publicKey?: string
   ) {
@@ -242,7 +242,13 @@ export class BlossomClient {
     const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
     const totalChunks = Math.ceil(encryptedData.length / CHUNK_SIZE);
     const chunks: ChunkUploadResponse[] = [];
-    const FALLBACK_SERVER = 'https://blossom.io/upload';
+    
+    // List of working Blossom servers to try in order
+    const FALLBACK_SERVERS = [
+      'https://blossom.primal.net',
+      'https://cdn.nostr.build',
+      'https://nostr.build',
+    ];
 
     try {
       for (let i = 0; i < totalChunks; i++) {
@@ -312,35 +318,34 @@ export class BlossomClient {
 
         // Fallback to blossom.io if primary fails
         if (!uploadSuccess) {
-          console.log('[v0] Trying fallback server:', FALLBACK_SERVER);
-          try {
-            const blob = new Blob([chunkData], { type: 'application/octet-stream' });
+          for (const FALLBACK_SERVER of FALLBACK_SERVERS) {
+            console.log('[v0] Trying fallback server:', FALLBACK_SERVER);
+            try {
+              const blob = new Blob([chunkData], { type: 'application/octet-stream' });
 
-            const fallbackResponse = await fetch(`${FALLBACK_SERVER}`, {
-              method: 'PUT',
-              headers: {
-                'Authorization': authHeader,
-                'Content-Type': 'application/octet-stream',
-              },
-              body: blob,
-              mode: 'cors',
-              credentials: 'omit',
-            });
+              const fallbackResponse = await fetch(`${FALLBACK_SERVER}`, {
+                method: 'PUT',
+                headers: {
+                  'Authorization': authHeader,
+                  'Content-Type': 'application/octet-stream',
+                },
+                body: blob,
+                mode: 'cors',
+                credentials: 'omit',
+              });
 
-            if (fallbackResponse.ok) {
-              uploadSuccess = true;
-              uploadResponse = fallbackResponse;
-              console.log('[v0] Chunk uploaded to fallback server');
-            } else {
-              throw new Error(
-                `Fallback: ${fallbackResponse.status} ${fallbackResponse.statusText}`
-              );
+              if (fallbackResponse.ok) {
+                uploadSuccess = true;
+                uploadResponse = fallbackResponse;
+                console.log('[v0] Chunk uploaded to fallback server');
+                break;
+              } else {
+                console.warn('[v0] Fallback server failed:', FALLBACK_SERVER);
+              }
+            } catch (fallbackError) {
+              const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+              console.warn('[v0] Fallback server error:', message);
             }
-          } catch (fallbackError) {
-            const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-            throw new Error(
-              `Chunk ${i} upload failed - Primary: ${primaryError?.message} | Fallback: ${message}`
-            );
           }
         }
 
