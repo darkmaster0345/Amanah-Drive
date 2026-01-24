@@ -107,7 +107,7 @@ export function FileUploadArea({
 
       // Step 5: Upload chunks to Blossom with BUD-02 authorization
       setUploadStage('Uploading chunks to Blossom...')
-      const blossomClient = createBlossomClient('https://blossom.primal.net', undefined, publicKey)
+      const blossomClient = createBlossomClient('https://satellite.earth', undefined, publicKey)
       const uploadResult = await blossomClient.uploadChunkedFile(
         encryptedData,
         file.name,
@@ -146,7 +146,7 @@ export function FileUploadArea({
         chunkHashes: uploadResult.chunks.map((c) => c.hash),
         size: file.size,
         encryptionKeyHash,
-        blossomServer: 'https://blossom.primal.net',
+        blossomServer: 'https://satellite.earth',
         vaultId,
         fileName: file.name,
         totalChunks: uploadResult.totalChunks,

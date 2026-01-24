@@ -53,7 +53,7 @@ export class BlossomClient {
   private publicKey?: string;
 
   constructor(
-    serverUrl: string = 'https://blossom.primal.net',
+    serverUrl: string = 'https://satellite.earth',
     authToken?: string,
     publicKey?: string
   ) {
@@ -242,13 +242,6 @@ export class BlossomClient {
     const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
     const totalChunks = Math.ceil(encryptedData.length / CHUNK_SIZE);
     const chunks: ChunkUploadResponse[] = [];
-    
-    // List of working Blossom servers to try in order
-    const FALLBACK_SERVERS = [
-      'https://satellite.earth',
-      'https://blossom.primal.net',
-      'https://cdn.nostr.build',
-    ];
 
     try {
       for (let i = 0; i < totalChunks; i++) {
@@ -256,23 +249,17 @@ export class BlossomClient {
         const end = Math.min(start + CHUNK_SIZE, encryptedData.length);
         const chunkData = encryptedData.slice(start, end);
 
-        // Hash the chunk for verification
+        // Compute SHA-256 hash of the chunk
         const chunkHash = await this.hashData(chunkData);
 
-        // Generate BUD-02 authorization event
+        // Validate public key
         if (!this.publicKey) {
           throw new Error('Public key required for BUD-02 authorization');
         }
 
+        // Create BUD-02 event with correct structure
         const bud02Event = createBUD02Event(this.publicKey, chunkHash, '');
         const authHeader = generateAuthHeader(bud02Event);
-
-        // DEBUG: Log the exact auth header format
-        console.log('[v0] Auth header format check:', {
-          hasNostrPrefix: authHeader.startsWith('Nostr '),
-          headerLength: authHeader.length,
-          headerPreview: authHeader.substring(0, 60) + '...',
-        });
 
         console.log('[v0] Uploading chunk:', {
           chunkIndex: i,
@@ -282,141 +269,52 @@ export class BlossomClient {
           server: this.serverUrl,
         });
 
-        // Try primary Blossom server first with CORS proxy
-        let uploadSuccess = false;
-        let uploadResponse: Response | null = null;
-        let primaryError: Error | null = null;
+        // Upload to satellite.earth with minimal headers
+        const uploadUrl = `${this.serverUrl}/upload`;
+        
+        try {
+          const response = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+              'Authorization': authHeader,
+            },
+            body: chunkData,
+            mode: 'cors',
+            credentials: 'omit',
+          });
 
-        // CORS proxy URLs to bypass browser restrictions
-        const CORS_PROXIES = [
-          'https://corsproxy.io/?',
-          'https://cors-anywhere.herokuapp.com/',
-        ];
-
-        // Try each CORS proxy with primary server
-        for (const corsProxy of CORS_PROXIES) {
-          const uploadUrl = `${corsProxy}${this.serverUrl}/upload`;
-          console.log('[v0] Trying upload with CORS proxy:', corsProxy);
-
-          try {
-            // Convert to Blob for proper fetch body
-            const blob = new Blob([chunkData], { type: 'application/octet-stream' });
-
-            uploadResponse = await fetch(uploadUrl, {
-              method: 'PUT',
-              headers: {
-                'Authorization': authHeader,
-              },
-              body: blob,
-              mode: 'cors',
-              credentials: 'omit',
+          if (response.status >= 200 && response.status < 300) {
+            // Success
+            console.log('[v0] Chunk uploaded successfully:', {
+              chunkIndex: i,
+              server: this.serverUrl,
+              hash: chunkHash.substring(0, 8) + '...',
             });
 
-            if (uploadResponse && uploadResponse.status >= 200 && uploadResponse.status < 300) {
-              uploadSuccess = true;
-              console.log('[v0] Chunk uploaded to primary server via', corsProxy);
-              break;
-            } else {
-              // Log detailed error info
-              const errorText = await uploadResponse?.text();
-              console.warn('[v0] Primary server failed with status:', {
-                proxy: corsProxy,
-                status: uploadResponse?.status,
-                statusText: uploadResponse?.statusText,
-                errorDetails: errorText?.substring(0, 200),
-              });
-              primaryError = new Error(
-                `Primary (${corsProxy}): ${uploadResponse?.status} ${uploadResponse?.statusText}`
-              );
-            }
-          } catch (error) {
-            primaryError = error instanceof Error ? error : new Error(String(error));
-            console.warn('[v0] Primary server error with', corsProxy, ':', primaryError.message);
+            chunks.push({
+              chunkIndex: i,
+              hash: chunkHash,
+              size: chunkData.byteLength,
+              url: `${this.serverUrl}/file/${chunkHash}`,
+            });
+
+            onChunkProgress?.(i + 1, totalChunks);
+          } else {
+            // Log error details
+            const errorText = await response.text();
+            console.error('[v0] Upload failed:', {
+              status: response.status,
+              statusText: response.statusText,
+              errorDetails: errorText.substring(0, 300),
+            });
+            throw new Error(
+              `Upload failed: ${response.status} ${response.statusText}`
+            );
           }
+        } catch (error) {
+          console.error('[v0] Upload error:', error);
+          throw error;
         }
-
-        // Fallback to other servers if primary fails
-        if (!uploadSuccess) {
-          for (const FALLBACK_SERVER of FALLBACK_SERVERS) {
-            if (FALLBACK_SERVER === this.serverUrl) continue; // Skip if same as primary
-            
-            console.log('[v0] Trying fallback server:', FALLBACK_SERVER);
-            
-            // Try each CORS proxy with fallback server
-            for (const corsProxy of CORS_PROXIES) {
-              const uploadUrl = `${corsProxy}${FALLBACK_SERVER}/upload`;
-              
-              try {
-                const blob = new Blob([chunkData], { type: 'application/octet-stream' });
-
-                const fallbackResponse = await fetch(uploadUrl, {
-                  method: 'PUT',
-                  headers: {
-                    'Authorization': authHeader,
-                  },
-                  body: blob,
-                  mode: 'cors',
-                  credentials: 'omit',
-                });
-
-                if (fallbackResponse && fallbackResponse.status >= 200 && fallbackResponse.status < 300) {
-                  uploadSuccess = true;
-                  uploadResponse = fallbackResponse;
-                  console.log('[v0] Chunk uploaded to fallback server:', FALLBACK_SERVER, 'via', corsProxy);
-                  break;
-                } else {
-                  // Log detailed error info
-                  const errorText = await fallbackResponse?.text();
-                  console.warn('[v0] Fallback server failed:', {
-                    server: FALLBACK_SERVER,
-                    proxy: corsProxy,
-                    status: fallbackResponse?.status,
-                    statusText: fallbackResponse?.statusText,
-                    errorDetails: errorText?.substring(0, 200),
-                  });
-                }
-              } catch (fallbackError) {
-                const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-                console.warn('[v0] Fallback server error:', FALLBACK_SERVER, 'via', corsProxy, ':', message);
-              }
-            }
-            
-            if (uploadSuccess) break; // Exit outer loop if successful
-          }
-        }
-
-        // Only proceed if upload was successful
-        if (!uploadSuccess) {
-          throw new Error(`Chunk ${i} upload failed on all servers`);
-        }
-
-        // Parse response and store chunk info
-        try {
-          const data = uploadResponse ? await uploadResponse.json() : { url: `${this.serverUrl}/upload/${chunkHash}` };
-          chunks.push({
-            chunkIndex: i,
-            hash: chunkHash,
-            size: chunkData.byteLength,
-            url: data.url || `${this.serverUrl}/upload/${chunkHash}`,
-          });
-        } catch {
-          // If response isn't JSON, use fallback URL
-          chunks.push({
-            chunkIndex: i,
-            hash: chunkHash,
-            size: chunkData.byteLength,
-            url: `${this.serverUrl}/upload/${chunkHash}`,
-          });
-        }
-
-        onChunkProgress?.(i + 1, totalChunks);
-
-        console.log('[v0] Chunk completed successfully:', {
-          chunkIndex: i,
-          totalChunks,
-          hash: chunkHash.substring(0, 8) + '...',
-          size: chunkData.byteLength,
-        });
       }
 
       return {
