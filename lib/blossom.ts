@@ -278,11 +278,10 @@ export class BlossomClient {
         let primaryError: Error | null = null;
 
         try {
-          uploadResponse = await fetch(`${this.serverUrl}/upload`, {
+          uploadResponse = await fetch(`${this.serverUrl}/${chunkHash}`, {
             method: 'PUT',
             headers: {
               'Authorization': authHeader,
-              'Blob-Sha256': chunkHash,
               'Content-Type': 'application/octet-stream',
             },
             body: chunkData,
@@ -308,11 +307,10 @@ export class BlossomClient {
         if (!uploadSuccess) {
           console.log('[v0] Trying fallback server...');
           try {
-            const fallbackResponse = await fetch(`${FALLBACK_SERVER}`, {
+            const fallbackResponse = await fetch(`${FALLBACK_SERVER}/${chunkHash}`, {
               method: 'PUT',
               headers: {
                 'Authorization': authHeader,
-                'Blob-Sha256': chunkHash,
                 'Content-Type': 'application/octet-stream',
               },
               body: chunkData,
