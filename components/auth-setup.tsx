@@ -136,32 +136,40 @@ export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-secondary/5">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--gold-glow)_0%,_transparent_50%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--cyan-glow)_0%,_transparent_40%)]" />
+      
+      <div className="w-full max-w-md relative z-10">
         {/* Header */}
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-lg bg-primary/10 mb-4">
-            <Lock className="w-8 h-8 text-primary" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 mb-6 gold-glow">
+            <Lock className="w-10 h-10 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Vault</h1>
+          <h1 className="text-4xl font-bold text-foreground mb-2 tracking-tight">Amanah</h1>
           <p className="text-sm text-muted-foreground">
-            Secure, decentralized file storage with Nostr
+            Sovereign, Decentralized, Encrypted Storage
           </p>
         </div>
 
         {/* Welcome Step */}
         {step === 'welcome' && (
-          <Card className="p-6 space-y-4 border-primary/20">
-            <div className="space-y-3">
-              <div className="flex gap-3">
-                <Shield className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
+          <Card className="p-8 space-y-6 glass-card border-primary/20 rounded-2xl">
+            <div className="space-y-4">
+              <div className="flex gap-4 p-4 rounded-xl bg-secondary/30">
+                <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                  <Shield className="w-5 h-5 text-accent" />
+                </div>
                 <div>
                   <h3 className="font-semibold text-foreground">End-to-End Encrypted</h3>
                   <p className="text-xs text-muted-foreground">All files encrypted before leaving your device</p>
                 </div>
               </div>
-              <div className="flex gap-3">
-                <Key className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
+              <div className="flex gap-4 p-4 rounded-xl bg-secondary/30">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Key className="w-5 h-5 text-primary" />
+                </div>
                 <div>
                   <h3 className="font-semibold text-foreground">Nostr Identity</h3>
                   <p className="text-xs text-muted-foreground">Use your Nostr keypair for authentication</p>
@@ -169,10 +177,10 @@ export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
               </div>
             </div>
 
-            <div className="pt-4 space-y-3">
+            <div className="pt-2 space-y-3">
               <Button
                 onClick={() => setStep('generate')}
-                className="w-full"
+                className="w-full h-12 text-base font-semibold rounded-xl"
                 size="lg"
               >
                 Create New Vault
@@ -180,7 +188,7 @@ export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
               <Button
                 onClick={() => setStep('import')}
                 variant="outline"
-                className="w-full"
+                className="w-full h-12 text-base rounded-xl bg-transparent border-border/50 hover:border-primary/50 hover:bg-primary/5"
                 size="lg"
               >
                 Import Existing Keypair
@@ -406,7 +414,14 @@ export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
 
         {/* Footer */}
         <div className="mt-8 text-center text-xs text-muted-foreground space-y-2">
-          <p>🔐 Client-side encryption • 🌐 Decentralized • 💾 Your data, your control</p>
+          <p className="flex items-center justify-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+            Client-side encryption
+            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+            Decentralized
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+            Your data, your control
+          </p>
           <p>Built on Nostr & Blossom protocols</p>
         </div>
       </div>

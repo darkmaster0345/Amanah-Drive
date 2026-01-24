@@ -1,31 +1,28 @@
 import React from "react"
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Inter, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: '--font-inter' });
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: '--font-mono' });
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f9f6f2' },
-    { media: '(prefers-color-scheme: dark)', color: '#261911' }
-  ]
+  themeColor: '#0A0A0A'
 }
 
 export const metadata: Metadata = {
-  title: 'Vault - Decentralized Storage',
-  description: 'Secure, encrypted file storage powered by Nostr and Blossom',
+  title: 'Amanah - Sovereign Storage',
+  description: 'Decentralized, encrypted file storage. Your data, your control.',
   generator: 'v0.app',
-  applicationName: 'Vault',
+  applicationName: 'Amanah',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Vault',
+    title: 'Amanah',
   },
   formatDetection: {
     telephone: false,
@@ -55,11 +52,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <link rel="manifest" href="/manifest.json" />
       </head>
-      <body className={`font-sans antialiased`}>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>
