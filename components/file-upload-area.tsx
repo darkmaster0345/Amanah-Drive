@@ -107,7 +107,7 @@ export function FileUploadArea({
 
       // Step 5: Upload chunks to Blossom with BUD-02 authorization
       setUploadStage('Uploading chunks to Blossom...')
-      const blossomClient = createBlossomClient('https://blossom.primal.net', undefined, publicKey)
+      const blossomClient = createBlossomClient('https://nostr.checkit.ssi.arrakis.tools/upload', undefined, publicKey)
       const uploadResult = await blossomClient.uploadChunkedFile(
         encryptedData,
         file.name,

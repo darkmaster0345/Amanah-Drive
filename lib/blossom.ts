@@ -53,7 +53,7 @@ export class BlossomClient {
   private publicKey?: string;
 
   constructor(
-    serverUrl: string = 'https://blossom.primal.net',
+    serverUrl: string = 'https://nostr.checkit.ssi.arrakis.tools/upload',
     authToken?: string,
     publicKey?: string
   ) {
@@ -233,10 +233,6 @@ export class BlossomClient {
       .join('');
   }
 
-  /**
-   * Upload encrypted file as multiple chunks (5MB each) using BUD-02 auth
-   * Returns array of chunk hashes for NIP-94 metadata
-   */
   async uploadChunkedFile(
     encryptedData: Uint8Array,
     fileName: string,
@@ -246,7 +242,7 @@ export class BlossomClient {
     const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
     const totalChunks = Math.ceil(encryptedData.length / CHUNK_SIZE);
     const chunks: ChunkUploadResponse[] = [];
-    const FALLBACK_SERVER = 'https://nostr.download/upload';
+    const FALLBACK_SERVER = 'https://blossom.io/upload';
 
     try {
       for (let i = 0; i < totalChunks; i++) {
@@ -265,11 +261,19 @@ export class BlossomClient {
         const bud02Event = createBUD02Event(this.publicKey, chunkHash, '');
         const authHeader = generateAuthHeader(bud02Event);
 
+        // DEBUG: Log the exact auth header format
+        console.log('[v0] Auth header format check:', {
+          hasNostrPrefix: authHeader.startsWith('Nostr '),
+          headerLength: authHeader.length,
+          headerPreview: authHeader.substring(0, 60) + '...',
+        });
+
         console.log('[v0] Uploading chunk:', {
           chunkIndex: i,
           totalChunks,
           hash: chunkHash.substring(0, 8) + '...',
           size: chunkData.byteLength,
+          server: this.serverUrl,
         });
 
         // Try primary Blossom server first
@@ -278,13 +282,16 @@ export class BlossomClient {
         let primaryError: Error | null = null;
 
         try {
-          uploadResponse = await fetch(`${this.serverUrl}/${chunkHash}`, {
+          // Convert to Blob for proper fetch body
+          const blob = new Blob([chunkData], { type: 'application/octet-stream' });
+
+          uploadResponse = await fetch(`${this.serverUrl}`, {
             method: 'PUT',
             headers: {
               'Authorization': authHeader,
               'Content-Type': 'application/octet-stream',
             },
-            body: chunkData,
+            body: blob,
             mode: 'cors',
             credentials: 'omit',
           });
@@ -303,17 +310,19 @@ export class BlossomClient {
           console.warn('[v0] Primary server error:', primaryError.message);
         }
 
-        // Fallback to nostr.download if primary fails
+        // Fallback to blossom.io if primary fails
         if (!uploadSuccess) {
-          console.log('[v0] Trying fallback server...');
+          console.log('[v0] Trying fallback server:', FALLBACK_SERVER);
           try {
-            const fallbackResponse = await fetch(`${FALLBACK_SERVER}/${chunkHash}`, {
+            const blob = new Blob([chunkData], { type: 'application/octet-stream' });
+
+            const fallbackResponse = await fetch(`${FALLBACK_SERVER}`, {
               method: 'PUT',
               headers: {
                 'Authorization': authHeader,
                 'Content-Type': 'application/octet-stream',
               },
-              body: chunkData,
+              body: blob,
               mode: 'cors',
               credentials: 'omit',
             });
@@ -337,12 +346,12 @@ export class BlossomClient {
 
         // Parse response and store chunk info
         try {
-          const data = uploadResponse ? await uploadResponse.json() : { url: `${this.serverUrl}/file/${chunkHash}` };
+          const data = uploadResponse ? await uploadResponse.json() : { url: `${this.serverUrl}/${chunkHash}` };
           chunks.push({
             chunkIndex: i,
             hash: chunkHash,
             size: chunkData.byteLength,
-            url: data.url || `${this.serverUrl}/file/${chunkHash}`,
+            url: data.url || `${this.serverUrl}/${chunkHash}`,
           });
         } catch {
           // If response isn't JSON, use fallback URL
@@ -350,7 +359,7 @@ export class BlossomClient {
             chunkIndex: i,
             hash: chunkHash,
             size: chunkData.byteLength,
-            url: `${this.serverUrl}/file/${chunkHash}`,
+            url: `${this.serverUrl}/${chunkHash}`,
           });
         }
 
