@@ -105,9 +105,9 @@ export function FileUploadArea({
       const encryptionKeyHash = await hashString(fileHash)
       setUploadProgress(50)
 
-      // Step 5: Upload chunks to Blossom with BUD-02 authorization
+      // Step 5: Upload chunks to Blossom with NIP-96 POST method
       setUploadStage('Uploading chunks to Blossom...')
-      const blossomClient = createBlossomClient('https://satellite.earth', undefined, publicKey)
+      const blossomClient = createBlossomClient('https://nostr.build/api/v2/upload/blossom', undefined, publicKey)
       const uploadResult = await blossomClient.uploadChunkedFile(
         encryptedData,
         file.name,
@@ -146,7 +146,7 @@ export function FileUploadArea({
         chunkHashes: uploadResult.chunks.map((c) => c.hash),
         size: file.size,
         encryptionKeyHash,
-        blossomServer: 'https://satellite.earth',
+        blossomServer: 'https://nostr.build/api/v2/upload/blossom',
         vaultId,
         fileName: file.name,
         totalChunks: uploadResult.totalChunks,

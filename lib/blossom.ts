@@ -2,10 +2,11 @@
  * Blossom protocol client for decentralized blob storage
  * Handles encrypted file uploads and downloads
  * All files must be encrypted before touching the server
- * Implements BUD-02 Authorization spec
+ * Implements NIP-96 POST method for reliable uploads
  */
 
-import { createBUD02Event, generateAuthHeader } from '@/lib/bud-02-auth';
+import { createNIP98Event, generateNIP98Header } from '@/lib/nip-98-auth';
+import { createBUD02Event, generateAuthHeader } from '@/lib/bud-02-auth'; // Import createBUD02Event and generateAuthHeader
 
 export interface BlossomServerInfo {
   url: string;
@@ -243,6 +244,12 @@ export class BlossomClient {
     const totalChunks = Math.ceil(encryptedData.length / CHUNK_SIZE);
     const chunks: ChunkUploadResponse[] = [];
 
+    // NIP-96 compatible servers (POST FormData method)
+    const UPLOAD_SERVERS = [
+      'https://nostr.build/api/v2/upload/blossom', // Primary: NIP-96 compatible
+      'https://void.cat/upload', // Fallback: more relaxed CORS
+    ];
+
     try {
       for (let i = 0; i < totalChunks; i++) {
         const start = i * CHUNK_SIZE;
@@ -254,80 +261,83 @@ export class BlossomClient {
 
         // Validate public key
         if (!this.publicKey) {
-          throw new Error('Public key required for BUD-02 authorization');
+          throw new Error('Public key required for NIP-98 authorization');
         }
-
-        // Create BUD-02 event with correct structure
-        const bud02Event = createBUD02Event(this.publicKey, chunkHash, '');
-        const authHeader = generateAuthHeader(bud02Event);
 
         console.log('[v0] Uploading chunk:', {
           chunkIndex: i,
           totalChunks,
           hash: chunkHash.substring(0, 8) + '...',
           size: chunkData.byteLength,
-          server: this.serverUrl,
         });
-
-        // Try hash-addressed route first, then API fallback
-        const uploadUrls = [
-          `${this.serverUrl}/${chunkHash}`, // Hash-addressed route: satellite.earth/[hex-hash]
-          'https://api.satellite.earth/v1/media', // API fallback
-        ];
 
         let uploadSuccess = false;
         let uploadError: Error | null = null;
 
-        for (const uploadUrl of uploadUrls) {
+        // Try each server
+        for (const serverUrl of UPLOAD_SERVERS) {
           try {
-            console.log('[v0] Attempting upload to:', uploadUrl);
+            console.log('[v0] Attempting upload to:', serverUrl);
 
-            const response = await fetch(uploadUrl, {
-              method: 'PUT',
+            // Create NIP-98 event for this request
+            const nip98Event = createNIP98Event(this.publicKey, serverUrl, 'POST');
+            const authHeader = generateNIP98Header(nip98Event);
+
+            // Build FormData with encrypted chunk
+            const formData = new FormData();
+            const blob = new Blob([chunkData], { type: 'application/octet-stream' });
+            formData.append('file', blob, 'blob');
+
+            const response = await fetch(serverUrl, {
+              method: 'POST',
               headers: {
                 'Authorization': authHeader,
               },
-              body: chunkData,
+              body: formData,
               mode: 'cors',
               credentials: 'omit',
             });
 
             if (response.status >= 200 && response.status < 300) {
               // Success
-              console.log('[v0] Chunk uploaded successfully to:', uploadUrl);
+              console.log('[v0] Chunk uploaded successfully:', {
+                server: serverUrl,
+                status: response.status,
+                hash: chunkHash.substring(0, 8) + '...',
+              });
 
               chunks.push({
                 chunkIndex: i,
                 hash: chunkHash,
                 size: chunkData.byteLength,
-                url: `${this.serverUrl}/${chunkHash}`,
+                url: `${serverUrl}/${chunkHash}`,
               });
 
               onChunkProgress?.(i + 1, totalChunks);
               uploadSuccess = true;
               break;
             } else {
-              // Log error details for this URL
+              // Log error details
               const errorText = await response.text();
-              console.warn('[v0] Upload failed for', uploadUrl, ':', {
+              console.warn('[v0] Upload failed for', serverUrl, ':', {
                 status: response.status,
                 statusText: response.statusText,
                 errorDetails: errorText.substring(0, 200),
               });
               uploadError = new Error(
-                `${uploadUrl}: ${response.status} ${response.statusText}`
+                `${serverUrl}: ${response.status} ${response.statusText}`
               );
             }
           } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
-            console.warn('[v0] Upload error for', uploadUrl, ':', errorMsg);
+            console.warn('[v0] Upload error for', serverUrl, ':', errorMsg);
             uploadError = error instanceof Error ? error : new Error(errorMsg);
           }
         }
 
         if (!uploadSuccess) {
-          console.error('[v0] Upload failed on all endpoints:', uploadError?.message);
-          throw uploadError || new Error('Upload failed on all endpoints');
+          console.error('[v0] Upload failed on all servers:', uploadError?.message);
+          throw uploadError || new Error('Upload failed on all servers');
         }
       }
 
