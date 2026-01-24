@@ -3,86 +3,29 @@
  * Fetches shards from Blossom, decrypts via Web Worker, and assembles final file
  */
 
-import { createEncryptionWorker, dispatchWorkerTask } from '@/lib/worker-factory';
+/**
+ * Download Assembler for decentralized file retrieval
+ * Fetches shards from Blossom, decrypts using per-chunk IVs, and assembles final file
+ */
 
-interface DecryptionWorker {
-  postMessage(message: any): void;
-  onmessage: ((event: MessageEvent) => void) | null;
-  terminate(): void;
-}
+import { decryptChunkWithPrependedIV } from '@/lib/encryption';
 
 export class DownloadAssembler {
-  private worker: Worker | null = null;
-  private workerReady = false;
-
   constructor() {
-    this.initWorker();
-  }
-
-  /**
-   * Initialize the encryption Web Worker using inlined blob
-   */
-  private initWorker(): void {
-    if (typeof window === 'undefined') return;
-    try {
-      this.worker = createEncryptionWorker();
-      this.workerReady = true;
-    } catch (error) {
-      console.error('[v0] Failed to initialize Web Worker:', error);
-      this.workerReady = false;
-    }
-  }
-
-  /**
-   * Decrypt a single shard using Web Worker
-   */
-  private decryptShard(
-    encryptedShard: ArrayBuffer,
-    encryptionKey: CryptoKey,
-    iv: Uint8Array
-  ): Promise<Uint8Array> {
-    return new Promise((resolve, reject) => {
-      if (!this.worker) {
-        reject(new Error('Web Worker not initialized'));
-        return;
-      }
-
-      const taskId = `decrypt-${Date.now()}-${Math.random()}`;
-
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data.id === taskId) {
-          this.worker?.removeEventListener('message', handleMessage);
-          
-          if (event.data.success) {
-            resolve(new Uint8Array(event.data.result));
-          } else {
-            reject(new Error(event.data.error || 'Decryption failed'));
-          }
-        }
-      };
-
-      this.worker.addEventListener('message', handleMessage);
-
-      this.worker.postMessage({
-        id: taskId,
-        type: 'decrypt',
-        data: encryptedShard,
-        key: encryptionKey,
-        iv: iv,
-      });
-    });
+    // No worker initialization needed anymore
   }
 
   /**
    * Fetch a single shard from Blossom server
    */
-  private async fetchShard(url: string): Promise<ArrayBuffer> {
+  private async fetchShard(url: string): Promise<Uint8Array> {
     try {
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Failed to fetch shard: ${response.status} ${response.statusText}`);
       }
-      return await response.arrayBuffer();
+      const arrayBuffer = await response.arrayBuffer();
+      return new Uint8Array(arrayBuffer);
     } catch (error) {
       console.error('[v0] Shard fetch failed:', error);
       throw error;
@@ -95,7 +38,6 @@ export class DownloadAssembler {
   async downloadAndAssemble(
     shardUrls: string[],
     encryptionKey: CryptoKey,
-    encryptionIv: Uint8Array,
     onProgress?: (current: number, total: number, stage: string) => void
   ): Promise<Uint8Array> {
     const totalShards = shardUrls.length;
@@ -115,12 +57,11 @@ export class DownloadAssembler {
         onProgress?.(i, totalShards, `Fetching shard ${i + 1}/${totalShards}`);
         const encryptedShard = await this.fetchShard(url);
 
-        // Decrypt shard via Web Worker
+        // Decrypt shard (IV is prepended to the chunk)
         onProgress?.(i + 0.5, totalShards, `Decrypting shard ${i + 1}/${totalShards}`);
-        const decryptedShard = await this.decryptShard(
+        const decryptedShard = await decryptChunkWithPrependedIV(
           encryptedShard,
-          encryptionKey,
-          encryptionIv
+          encryptionKey
         );
 
         decryptedShards.push(decryptedShard);
@@ -159,13 +100,9 @@ export class DownloadAssembler {
   }
 
   /**
-   * Cleanup worker
+   * Cleanup method (kept for compatibility)
    */
   cleanup(): void {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-      this.workerReady = false;
-    }
+    // No worker to terminate
   }
 }
