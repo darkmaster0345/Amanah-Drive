@@ -267,21 +267,24 @@ export class BlossomClient {
         console.log('[v0] Uploading chunk with BUD-02 auth:', {
           chunkIndex: i,
           hash: chunkHash.substring(0, 8) + '...',
-          authHeaderPrefix: authHeader.substring(0, 30) + '...',
+          authHeaderPrefix: authHeader.substring(0, 40) + '...',
+          blobSha256: chunkHash.substring(0, 8) + '...',
+          url: `${this.serverUrl}/upload`,
+          method: 'PUT',
         });
 
         // Upload the chunk to /upload endpoint with BUD-02 auth
         const response = await fetch(`${this.serverUrl}/upload`, {
           method: 'PUT',
           headers: {
-            'Authorization': `Nostr ${authHeader}`,
+            'Authorization': authHeader,
             'Content-Type': 'application/octet-stream',
             'Blob-Sha256': chunkHash,
           },
           body: chunkData,
           mode: 'cors',
           credentials: 'omit',
-        } as RequestInit & { crossorigin: string });
+        });
 
         if (!response.ok) {
           throw new Error(
