@@ -1,0 +1,48 @@
+{
+  "name": "Vault - Decentralized Storage",
+  "short_name": "Vault",
+  "description": "Secure, encrypted file storage powered by Nostr and Blossom",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f9f6f2",
+  "theme_color": "#8B5A3C",
+  "categories": ["productivity", "utilities"],
+  "screenshots": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/icon-light-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-dark-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Upload File",
+      "short_name": "Upload",
+      "description": "Upload and encrypt a new file",
+      "url": "/?tab=upload",
+      "icons": []
+    },
+    {
+      "name": "View Files",
+      "short_name": "Files",
+      "description": "View your encrypted files",
+      "url": "/?tab=files",
+      "icons": []
+    }
+  ]
+}
