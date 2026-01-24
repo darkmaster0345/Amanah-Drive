@@ -39,12 +39,14 @@ export function createBUD02Event(
 
 /**
  * Generate the Nostr authorization header for BUD-02
+ * Returns just the base64-encoded event (without "Nostr" prefix)
  */
 export function generateAuthHeader(event: BUD02Event): string {
   // Base64 encode the stringified event
   const eventStr = JSON.stringify(event);
   const encoded = btoa(eventStr);
-  return `Nostr ${encoded}`;
+  // Return just the base64 part - caller will add "Nostr" prefix
+  return encoded;
 }
 
 /**
