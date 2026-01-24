@@ -246,6 +246,7 @@ export class BlossomClient {
     const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
     const totalChunks = Math.ceil(encryptedData.length / CHUNK_SIZE);
     const chunks: ChunkUploadResponse[] = [];
+    const FALLBACK_SERVER = 'https://nostr.download/upload';
 
     try {
       for (let i = 0; i < totalChunks; i++) {
@@ -264,50 +265,103 @@ export class BlossomClient {
         const bud02Event = createBUD02Event(this.publicKey, chunkHash, '');
         const authHeader = generateAuthHeader(bud02Event);
 
-        console.log('[v0] Uploading chunk with BUD-02 auth:', {
-          chunkIndex: i,
-          hash: chunkHash.substring(0, 8) + '...',
-          authHeaderPrefix: authHeader.substring(0, 40) + '...',
-          blobSha256: chunkHash.substring(0, 8) + '...',
-          url: `${this.serverUrl}/upload`,
-          method: 'PUT',
-        });
-
-        // Upload the chunk to /upload endpoint with BUD-02 auth
-        const response = await fetch(`${this.serverUrl}/upload`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': authHeader,
-            'Content-Type': 'application/octet-stream',
-            'Blob-Sha256': chunkHash,
-          },
-          body: chunkData,
-          mode: 'cors',
-          credentials: 'omit',
-        });
-
-        if (!response.ok) {
-          throw new Error(
-            `Chunk ${i} upload failed: ${response.status} ${response.statusText}`
-          );
-        }
-
-        const data = await response.json();
-
-        chunks.push({
-          chunkIndex: i,
-          hash: chunkHash,
-          size: chunkData.length,
-          url: data.url || `${this.serverUrl}/file/${chunkHash}`,
-        });
-
-        onChunkProgress?.(i + 1, totalChunks);
-
-        console.log('[v0] Chunk uploaded successfully:', {
+        console.log('[v0] Uploading chunk:', {
           chunkIndex: i,
           totalChunks,
           hash: chunkHash.substring(0, 8) + '...',
-          size: chunkData.length,
+          size: chunkData.byteLength,
+        });
+
+        // Try primary Blossom server first
+        let uploadSuccess = false;
+        let uploadResponse: Response | null = null;
+        let primaryError: Error | null = null;
+
+        try {
+          uploadResponse = await fetch(`${this.serverUrl}/upload`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': authHeader,
+              'Blob-Sha256': chunkHash,
+              'Content-Type': 'application/octet-stream',
+            },
+            body: chunkData,
+            mode: 'cors',
+            credentials: 'omit',
+          });
+
+          if (uploadResponse.ok) {
+            uploadSuccess = true;
+            console.log('[v0] Chunk uploaded to primary server');
+          } else {
+            primaryError = new Error(
+              `Primary: ${uploadResponse.status} ${uploadResponse.statusText}`
+            );
+            console.warn('[v0] Primary server failed:', primaryError.message);
+          }
+        } catch (error) {
+          primaryError = error instanceof Error ? error : new Error(String(error));
+          console.warn('[v0] Primary server error:', primaryError.message);
+        }
+
+        // Fallback to nostr.download if primary fails
+        if (!uploadSuccess) {
+          console.log('[v0] Trying fallback server...');
+          try {
+            const fallbackResponse = await fetch(`${FALLBACK_SERVER}`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': authHeader,
+                'Blob-Sha256': chunkHash,
+                'Content-Type': 'application/octet-stream',
+              },
+              body: chunkData,
+              mode: 'cors',
+              credentials: 'omit',
+            });
+
+            if (fallbackResponse.ok) {
+              uploadSuccess = true;
+              uploadResponse = fallbackResponse;
+              console.log('[v0] Chunk uploaded to fallback server');
+            } else {
+              throw new Error(
+                `Fallback: ${fallbackResponse.status} ${fallbackResponse.statusText}`
+              );
+            }
+          } catch (fallbackError) {
+            const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            throw new Error(
+              `Chunk ${i} upload failed - Primary: ${primaryError?.message} | Fallback: ${message}`
+            );
+          }
+        }
+
+        // Parse response and store chunk info
+        try {
+          const data = uploadResponse ? await uploadResponse.json() : { url: `${this.serverUrl}/file/${chunkHash}` };
+          chunks.push({
+            chunkIndex: i,
+            hash: chunkHash,
+            size: chunkData.byteLength,
+            url: data.url || `${this.serverUrl}/file/${chunkHash}`,
+          });
+        } catch {
+          // If response isn't JSON, use fallback URL
+          chunks.push({
+            chunkIndex: i,
+            hash: chunkHash,
+            size: chunkData.byteLength,
+            url: `${this.serverUrl}/file/${chunkHash}`,
+          });
+        }
+
+        onChunkProgress?.(i + 1, totalChunks);
+
+        console.log('[v0] Chunk completed:', {
+          chunkIndex: i,
+          totalChunks,
+          hash: chunkHash.substring(0, 8) + '...',
         });
       }
 
