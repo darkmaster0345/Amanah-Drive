@@ -105,9 +105,9 @@ export function FileUploadArea({
       const encryptionKeyHash = await hashString(fileHash)
       setUploadProgress(50)
 
-      // Step 5: Upload chunks to Blossom
+      // Step 5: Upload chunks to Blossom with BUD-02 authorization
       setUploadStage('Uploading chunks to Blossom...')
-      const blossomClient = createBlossomClient('https://blossom.primal.net')
+      const blossomClient = createBlossomClient('https://blossom.primal.net', undefined, publicKey)
       const uploadResult = await blossomClient.uploadChunkedFile(
         encryptedData,
         file.name,

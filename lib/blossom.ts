@@ -2,7 +2,10 @@
  * Blossom protocol client for decentralized blob storage
  * Handles encrypted file uploads and downloads
  * All files must be encrypted before touching the server
+ * Implements BUD-02 Authorization spec
  */
+
+import { createBUD02Event, generateAuthHeader } from '@/lib/bud-02-auth';
 
 export interface BlossomServerInfo {
   url: string;
@@ -47,10 +50,16 @@ export interface MultiChunkUploadResult {
 export class BlossomClient {
   private serverUrl: string;
   private authToken?: string;
+  private publicKey?: string;
 
-  constructor(serverUrl: string, authToken?: string) {
-    this.serverUrl = serverUrl.replace(/\/$/, ''); // Remove trailing slash
+  constructor(
+    serverUrl: string = 'https://blossom.primal.net',
+    authToken?: string,
+    publicKey?: string
+  ) {
+    this.serverUrl = serverUrl;
     this.authToken = authToken;
+    this.publicKey = publicKey || localStorage.getItem('vault_nostr_pubkey') || undefined;
   }
 
   /**
@@ -225,7 +234,7 @@ export class BlossomClient {
   }
 
   /**
-   * Upload encrypted file as multiple chunks (5MB each)
+   * Upload encrypted file as multiple chunks (5MB each) using BUD-02 auth
    * Returns array of chunk hashes for NIP-94 metadata
    */
   async uploadChunkedFile(
@@ -247,22 +256,30 @@ export class BlossomClient {
         // Hash the chunk for verification
         const chunkHash = await this.hashData(chunkData);
 
-        // Upload the chunk
-        const formData = new FormData();
-        const blob = new Blob([chunkData], { type: 'application/octet-stream' });
-        formData.append('file', blob, `${fileId}-chunk-${i}`);
-        formData.append('chunk_index', i.toString());
-        formData.append('total_chunks', totalChunks.toString());
-        formData.append('chunk_hash', chunkHash);
+        // Generate BUD-02 authorization event
+        if (!this.publicKey) {
+          throw new Error('Public key required for BUD-02 authorization');
+        }
 
-        const headers: HeadersInit = {
-          'X-Blossom-Auth': this.authToken || '',
-        };
+        const bud02Event = createBUD02Event(this.publicKey, chunkHash, '');
+        const authHeader = generateAuthHeader(bud02Event);
 
-        const response = await fetch(`${this.serverUrl}/upload`, {
+        console.log('[v0] Uploading chunk with BUD-02 auth:', {
+          chunkIndex: i,
+          hash: chunkHash.substring(0, 8) + '...',
+          authHeaderPrefix: authHeader.substring(0, 30) + '...',
+        });
+
+        // Upload the chunk directly to /[fileHash] endpoint with PUT method
+        const response = await fetch(`${this.serverUrl}/${chunkHash}`, {
           method: 'PUT',
-          headers,
-          body: formData,
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: chunkData,
+          mode: 'cors',
+          credentials: 'omit',
         });
 
         if (!response.ok) {
@@ -282,7 +299,7 @@ export class BlossomClient {
 
         onChunkProgress?.(i + 1, totalChunks);
 
-        console.log('[v0] Chunk uploaded:', {
+        console.log('[v0] Chunk uploaded successfully:', {
           chunkIndex: i,
           totalChunks,
           hash: chunkHash.substring(0, 8) + '...',
@@ -344,11 +361,12 @@ export class BlossomClient {
 }
 
 /**
- * Factory for creating Blossom client instances
+ * Factory for creating Blossom client instances with BUD-02 support
  */
 export function createBlossomClient(
   serverUrl: string = 'https://blossom.primal.net',
-  authToken?: string
+  authToken?: string,
+  publicKey?: string
 ): BlossomClient {
-  return new BlossomClient(serverUrl, authToken);
+  return new BlossomClient(serverUrl, authToken, publicKey);
 }
