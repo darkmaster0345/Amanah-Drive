@@ -3,6 +3,8 @@
  * Fetches shards from Blossom, decrypts via Web Worker, and assembles final file
  */
 
+import { createEncryptionWorker, dispatchWorkerTask } from '@/lib/worker-factory';
+
 interface DecryptionWorker {
   postMessage(message: any): void;
   onmessage: ((event: MessageEvent) => void) | null;
@@ -10,7 +12,7 @@ interface DecryptionWorker {
 }
 
 export class DownloadAssembler {
-  private worker: DecryptionWorker | null = null;
+  private worker: Worker | null = null;
   private workerReady = false;
 
   constructor() {
@@ -18,12 +20,12 @@ export class DownloadAssembler {
   }
 
   /**
-   * Initialize the encryption Web Worker
+   * Initialize the encryption Web Worker using inlined blob
    */
   private initWorker(): void {
     if (typeof window === 'undefined') return;
     try {
-      this.worker = new Worker('/workers/encryption.worker.ts');
+      this.worker = createEncryptionWorker();
       this.workerReady = true;
     } catch (error) {
       console.error('[v0] Failed to initialize Web Worker:', error);

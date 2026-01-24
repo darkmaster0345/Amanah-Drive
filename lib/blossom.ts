@@ -89,7 +89,7 @@ export class BlossomClient {
       };
 
       const response = await fetch(`${this.serverUrl}/upload`, {
-        method: 'POST',
+        method: 'PUT',
         headers,
         body: formData,
       });
@@ -260,7 +260,7 @@ export class BlossomClient {
         };
 
         const response = await fetch(`${this.serverUrl}/upload`, {
-          method: 'POST',
+          method: 'PUT',
           headers,
           body: formData,
         });
@@ -347,7 +347,7 @@ export class BlossomClient {
  * Factory for creating Blossom client instances
  */
 export function createBlossomClient(
-  serverUrl: string = 'https://cdn.example.com',
+  serverUrl: string = 'https://blossom.primal.net',
   authToken?: string
 ): BlossomClient {
   return new BlossomClient(serverUrl, authToken);

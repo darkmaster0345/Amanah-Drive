@@ -29,15 +29,6 @@ export function FileUploadArea({
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadStage, setUploadStage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const workerRef = useRef<Worker | null>(null)
-
-  // Initialize Web Worker
-  const initializeWorker = () => {
-    if (!workerRef.current) {
-      workerRef.current = new Worker('/workers/encryption.worker.ts')
-    }
-    return workerRef.current
-  }
 
   const handleFile = async (file: File) => {
     if (!file) return
@@ -116,7 +107,7 @@ export function FileUploadArea({
 
       // Step 5: Upload chunks to Blossom
       setUploadStage('Uploading chunks to Blossom...')
-      const blossomClient = createBlossomClient('https://cdn.example.com')
+      const blossomClient = createBlossomClient('https://blossom.primal.net')
       const uploadResult = await blossomClient.uploadChunkedFile(
         encryptedData,
         file.name,
@@ -155,7 +146,7 @@ export function FileUploadArea({
         chunkHashes: uploadResult.chunks.map((c) => c.hash),
         size: file.size,
         encryptionKeyHash,
-        blossomServer: 'https://cdn.example.com',
+        blossomServer: 'https://blossom.primal.net',
         vaultId,
         fileName: file.name,
         totalChunks: uploadResult.totalChunks,
