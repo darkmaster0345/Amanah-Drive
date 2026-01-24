@@ -42,29 +42,50 @@ export interface GiftWrapEvent extends NostrEvent {
 
 /**
  * Create a NIP-94 file metadata event
+ * For files split into chunks, include all chunk hashes
  */
 export function createFileMetadataEvent(
   publicKey: string,
   fileData: {
-    url: string;
+    url?: string;
     mimeType: string;
-    sha256Hash: string;
+    sha256Hash?: string;
+    chunkHashes?: string[]; // For chunked files
     size: number;
     encryptionKeyHash: string;
     blossomServer: string;
     vaultId: string;
     fileName?: string;
+    totalChunks?: number;
   }
 ): Omit<FileMetadataEvent, 'id' | 'sig'> {
-  const tags: string[][] = [
-    ['url', fileData.url],
-    ['m', fileData.mimeType],
-    ['x', fileData.sha256Hash],
-    ['size', fileData.size.toString()],
-    ['encryptionKeyHash', fileData.encryptionKeyHash],
-    ['blossomServer', fileData.blossomServer],
-    ['vaultId', fileData.vaultId],
-  ];
+  const tags: string[][] = [];
+
+  // Single file hash or first chunk hash
+  if (fileData.sha256Hash) {
+    tags.push(['x', fileData.sha256Hash]);
+  }
+
+  // Multiple chunk hashes (for chunked files)
+  if (fileData.chunkHashes && fileData.chunkHashes.length > 0) {
+    fileData.chunkHashes.forEach((hash, index) => {
+      tags.push(['chunk', hash, index.toString()]);
+    });
+
+    if (fileData.totalChunks) {
+      tags.push(['totalChunks', fileData.totalChunks.toString()]);
+    }
+  }
+
+  if (fileData.url) {
+    tags.push(['url', fileData.url]);
+  }
+
+  tags.push(['m', fileData.mimeType]);
+  tags.push(['size', fileData.size.toString()]);
+  tags.push(['encryptionKeyHash', fileData.encryptionKeyHash]);
+  tags.push(['blossomServer', fileData.blossomServer]);
+  tags.push(['vaultId', fileData.vaultId]);
 
   if (fileData.fileName) {
     tags.push(['title', fileData.fileName]);
@@ -75,7 +96,9 @@ export function createFileMetadataEvent(
     pubkey: publicKey,
     created_at: Math.floor(Date.now() / 1000),
     tags,
-    content: `Encrypted file metadata for vault ${fileData.vaultId}`,
+    content: fileData.chunkHashes
+      ? `Chunked encrypted file with ${fileData.chunkHashes.length} parts for vault ${fileData.vaultId}`
+      : `Encrypted file metadata for vault ${fileData.vaultId}`,
   } as Omit<FileMetadataEvent, 'id' | 'sig'>;
 }
 

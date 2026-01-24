@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { Lock, Key, Shield } from 'lucide-react'
+import { Lock, Key, Shield, Copy, Eye, EyeOff } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { generateNostrKeypair, hashString } from '@/lib/encryption'
 
@@ -13,10 +13,13 @@ interface AuthSetupProps {
 }
 
 export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
-  const [step, setStep] = useState<'welcome' | 'generate' | 'import'>('welcome')
+  const [step, setStep] = useState<'welcome' | 'generate' | 'import' | 'export'>('welcome')
   const [password, setPassword] = useState('')
   const [publicKey, setPublicKey] = useState('')
+  const [generatedKeypair, setGeneratedKeypair] = useState<{publicKey: string; privateKey: string} | null>(null)
+  const [revealSecret, setRevealSecret] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const revealTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const handleGenerateKeypair = async () => {
     if (!password.trim()) {
@@ -39,20 +42,43 @@ export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
         timestamp: Date.now(),
       }
       
+      // Store the generated keypair temporarily for export/backup
       localStorage.setItem('vault_keypair', JSON.stringify(encryptedKeypair))
+      localStorage.setItem('vault_nostr_pubkey', keypair.publicKey)
+      
+      // Show the export step so user can backup
+      setGeneratedKeypair(keypair)
+      setStep('export')
       
       console.log('[v0] Keypair generated:', {
         publicKey: keypair.publicKey.substring(0, 8) + '...',
       })
-
-      toast.success('Keypair created successfully!')
-      onAuthenticated(keypair.publicKey)
     } catch (error) {
       console.error('[v0] Failed to generate keypair:', error)
       toast.error('Failed to generate keypair')
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleRevealSecretOnHold = (isHolding: boolean) => {
+    if (revealTimeoutRef.current) {
+      clearTimeout(revealTimeoutRef.current)
+    }
+
+    if (isHolding) {
+      setRevealSecret(true)
+    } else {
+      // Auto-hide after release with slight delay
+      revealTimeoutRef.current = setTimeout(() => {
+        setRevealSecret(false)
+      }, 100)
+    }
+  }
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text)
+    toast.success(`${label} copied to clipboard`)
   }
 
   const handleImportKeypair = async () => {
@@ -66,29 +92,46 @@ export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
       return
     }
 
+    // Validate key format (64 hex chars or npub1...)
+    const isValidKey = /^[a-f0-9]{64}$|^npub1[a-z0-9]{58}$/.test(publicKey.trim())
+    if (!isValidKey) {
+      toast.error('Invalid key format', {
+        description: 'Enter a 64-character hex key or npub1... format',
+      })
+      return
+    }
+
     setIsLoading(true)
     try {
       const keyHash = await hashString(password)
       
       const encryptedKeypair = {
-        publicKey,
+        publicKey: publicKey.trim(),
         privateKeyHash: keyHash,
         timestamp: Date.now(),
       }
       
       localStorage.setItem('vault_keypair', JSON.stringify(encryptedKeypair))
+      localStorage.setItem('vault_nostr_pubkey', publicKey.trim())
       
       console.log('[v0] Keypair imported:', {
         publicKey: publicKey.substring(0, 8) + '...',
       })
 
       toast.success('Keypair imported successfully!')
-      onAuthenticated(publicKey)
+      onAuthenticated(publicKey.trim())
     } catch (error) {
       console.error('[v0] Failed to import keypair:', error)
       toast.error('Failed to import keypair')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const proceedWithAuthentication = () => {
+    if (generatedKeypair) {
+      toast.success('Keypair created successfully!')
+      onAuthenticated(generatedKeypair.publicKey)
     }
   }
 
@@ -203,12 +246,28 @@ export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
                 <label className="text-sm font-semibold text-foreground block mb-2">
                   Public Key (Nostr)
                 </label>
-                <Input
-                  placeholder="npub1... or 64-char hex"
-                  value={publicKey}
-                  onChange={(e) => setPublicKey(e.target.value)}
-                  disabled={isLoading}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="npub1... or 64-char hex"
+                    value={publicKey}
+                    onChange={(e) => setPublicKey(e.target.value)}
+                    disabled={isLoading}
+                    className="flex-1"
+                  />
+                  {publicKey && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => copyToClipboard(publicKey, 'Key')}
+                      disabled={isLoading}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enter a Nostr public key in hex or npub1 format
+                </p>
               </div>
 
               <div>
@@ -245,6 +304,101 @@ export function AuthSetup({ onAuthenticated }: AuthSetupProps) {
                 size="lg"
               >
                 {isLoading ? 'Importing...' : 'Import Keypair'}
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {/* Export/Backup Step */}
+        {step === 'export' && generatedKeypair && (
+          <Card className="p-6 space-y-4 border-accent/20">
+            <div>
+              <h2 className="text-lg font-bold text-foreground mb-2">Backup Your Keys</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Save your public and private keys in a secure location. You'll need them to recover your vault.
+              </p>
+            </div>
+
+            <div className="space-y-3 bg-secondary/30 p-4 rounded-lg">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Public Key
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={generatedKeypair.publicKey}
+                    className="flex-1 px-3 py-2 text-xs bg-background border border-input rounded font-mono"
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => copyToClipboard(generatedKeypair.publicKey, 'Public key')}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Private Key (Hold to reveal)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type={revealSecret ? 'text' : 'password'}
+                    readOnly
+                    value={generatedKeypair.privateKey}
+                    className="flex-1 px-3 py-2 text-xs bg-background border border-input rounded font-mono"
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onMouseDown={() => handleRevealSecretOnHold(true)}
+                    onMouseUp={() => handleRevealSecretOnHold(false)}
+                    onMouseLeave={() => handleRevealSecretOnHold(false)}
+                    onTouchStart={() => handleRevealSecretOnHold(true)}
+                    onTouchEnd={() => handleRevealSecretOnHold(false)}
+                  >
+                    {revealSecret ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => copyToClipboard(generatedKeypair.privateKey, 'Private key')}
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-destructive mt-1">
+                  Never share your private key. Anyone with it can access your vault.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={() => {
+                  setGeneratedKeypair(null)
+                  setPassword('')
+                  setStep('welcome')
+                }}
+                variant="outline"
+                className="flex-1"
+              >
+                Back
+              </Button>
+              <Button
+                onClick={proceedWithAuthentication}
+                className="flex-1"
+                size="lg"
+              >
+                I've Saved My Keys
               </Button>
             </div>
           </Card>

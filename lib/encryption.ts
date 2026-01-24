@@ -50,14 +50,21 @@ export async function deriveKeyFromPassword(
 
 /**
  * Encrypt data using AES-GCM with a derived key
+ * Handles both string and binary data
  */
 export async function encryptData(
-  data: string,
+  data: string | Uint8Array,
   key: CryptoKey,
   iv?: Uint8Array
 ): Promise<EncryptedData> {
-  const encoder = new TextEncoder();
-  const dataBuffer = encoder.encode(data);
+  let dataBuffer: Uint8Array;
+  
+  if (typeof data === 'string') {
+    const encoder = new TextEncoder();
+    dataBuffer = encoder.encode(data);
+  } else {
+    dataBuffer = data;
+  }
 
   if (!iv) {
     iv = crypto.getRandomValues(new Uint8Array(12));

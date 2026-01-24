@@ -3,10 +3,10 @@
 import { Card } from '@/components/ui/card'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { FileIcon, HardDrive, Folder, Lock } from 'lucide-react'
-import type { StorageFile, Vault } from '@/lib/db'
+import type { FileMetadata, Vault } from '@/lib/indexed-storage'
 
 interface DashboardProps {
-  files: StorageFile[]
+  files: FileMetadata[]
   vaults: Vault[]
   publicKey: string
 }

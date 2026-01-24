@@ -26,6 +26,20 @@ export interface BlobMetadata {
   timestamp: number;
 }
 
+export interface ChunkUploadResponse {
+  chunkIndex: number;
+  hash: string;
+  size: number;
+  url: string;
+}
+
+export interface MultiChunkUploadResult {
+  fileId: string;
+  totalChunks: number;
+  chunks: ChunkUploadResponse[];
+  totalSize: number;
+}
+
 /**
  * Blossom Protocol Client
  * Manages encrypted blob uploads and downloads
@@ -208,6 +222,124 @@ export class BlossomClient {
     return Array.from(new Uint8Array(hashBuffer))
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
+  }
+
+  /**
+   * Upload encrypted file as multiple chunks (5MB each)
+   * Returns array of chunk hashes for NIP-94 metadata
+   */
+  async uploadChunkedFile(
+    encryptedData: Uint8Array,
+    fileName: string,
+    fileId: string,
+    onChunkProgress?: (chunkIndex: number, totalChunks: number) => void
+  ): Promise<MultiChunkUploadResult> {
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+    const totalChunks = Math.ceil(encryptedData.length / CHUNK_SIZE);
+    const chunks: ChunkUploadResponse[] = [];
+
+    try {
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, encryptedData.length);
+        const chunkData = encryptedData.slice(start, end);
+
+        // Hash the chunk for verification
+        const chunkHash = await this.hashData(chunkData);
+
+        // Upload the chunk
+        const formData = new FormData();
+        const blob = new Blob([chunkData], { type: 'application/octet-stream' });
+        formData.append('file', blob, `${fileId}-chunk-${i}`);
+        formData.append('chunk_index', i.toString());
+        formData.append('total_chunks', totalChunks.toString());
+        formData.append('chunk_hash', chunkHash);
+
+        const headers: HeadersInit = {
+          'X-Blossom-Auth': this.authToken || '',
+        };
+
+        const response = await fetch(`${this.serverUrl}/upload`, {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Chunk ${i} upload failed: ${response.status} ${response.statusText}`
+          );
+        }
+
+        const data = await response.json();
+
+        chunks.push({
+          chunkIndex: i,
+          hash: chunkHash,
+          size: chunkData.length,
+          url: data.url || `${this.serverUrl}/file/${chunkHash}`,
+        });
+
+        onChunkProgress?.(i + 1, totalChunks);
+
+        console.log('[v0] Chunk uploaded:', {
+          chunkIndex: i,
+          totalChunks,
+          hash: chunkHash.substring(0, 8) + '...',
+          size: chunkData.length,
+        });
+      }
+
+      return {
+        fileId,
+        totalChunks,
+        chunks,
+        totalSize: encryptedData.length,
+      };
+    } catch (error) {
+      console.error('[v0] Chunked upload failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Download file chunks from Blossom and reconstruct
+   */
+  async downloadChunkedFile(
+    chunkUrls: string[],
+    onChunkDownload?: (chunkIndex: number, totalChunks: number) => void
+  ): Promise<Uint8Array> {
+    try {
+      const chunks: Uint8Array[] = [];
+
+      for (let i = 0; i < chunkUrls.length; i++) {
+        const chunkData = await this.downloadBlob(chunkUrls[i]);
+        chunks.push(chunkData);
+
+        onChunkDownload?.(i + 1, chunkUrls.length);
+
+        console.log('[v0] Chunk downloaded:', {
+          chunkIndex: i,
+          totalChunks: chunkUrls.length,
+          size: chunkData.length,
+        });
+      }
+
+      // Concatenate all chunks
+      const totalSize = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const result = new Uint8Array(totalSize);
+      let offset = 0;
+
+      for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      return result;
+    } catch (error) {
+      console.error('[v0] Chunked download failed:', error);
+      throw error;
+    }
   }
 }
 

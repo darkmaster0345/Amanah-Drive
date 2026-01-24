@@ -8,10 +8,10 @@ import { FileUploadArea } from '@/components/file-upload-area'
 import { VaultList } from '@/components/vault-list'
 import { FileViewer } from '@/components/file-viewer'
 import { Dashboard } from '@/components/dashboard'
-import { LogOut, Lock } from 'lucide-react'
+import { PrivacyStatusBar } from '@/components/privacy-status-bar'
+import { LogOut, Lock, Plus } from 'lucide-react'
 import { toast } from '@/lib/toast'
-import { db } from '@/lib/db'
-import type { StorageFile, Vault } from '@/lib/db'
+import { indexedStorage, type FileMetadata, type Vault } from '@/lib/indexed-storage'
 
 interface VaultDashboardProps {
   publicKey: string
@@ -21,8 +21,8 @@ interface VaultDashboardProps {
 export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
   const [vaults, setVaults] = useState<Vault[]>([])
   const [selectedVault, setSelectedVault] = useState<Vault | null>(null)
-  const [files, setFiles] = useState<StorageFile[]>([])
-  const [selectedFile, setSelectedFile] = useState<StorageFile | null>(null)
+  const [files, setFiles] = useState<FileMetadata[]>([])
+  const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
   const loadVaults = async () => {
     try {
       setIsLoading(true)
-      const loadedVaults = await db.listVaults()
+      const loadedVaults = await indexedStorage.getVaults()
       setVaults(loadedVaults)
 
       if (loadedVaults.length === 0) {
@@ -46,11 +46,11 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
         const defaultVault: Vault = {
           id: 'default-' + Date.now(),
           name: 'My Vault',
-          description: 'Default encrypted storage vault',
           createdAt: Date.now(),
           updatedAt: Date.now(),
+          publicKey,
         }
-        await db.addVault(defaultVault)
+        await indexedStorage.saveVault(defaultVault)
         setVaults([defaultVault])
         setSelectedVault(defaultVault)
       } else {
@@ -66,7 +66,7 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
 
   const loadFiles = async (vaultId: string) => {
     try {
-      const loadedFiles = await db.getFilesByVault(vaultId)
+      const loadedFiles = await indexedStorage.getVaultFiles(vaultId)
       setFiles(loadedFiles)
       setSelectedFile(null)
     } catch (error) {
@@ -83,11 +83,11 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
       const newVault: Vault = {
         id: 'vault-' + Date.now(),
         name: vaultName,
-        description: '',
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        publicKey,
       }
-      await db.addVault(newVault)
+      await indexedStorage.saveVault(newVault)
       setVaults([...vaults, newVault])
       toast.success('Vault created successfully')
     } catch (error) {
@@ -96,14 +96,14 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
     }
   }
 
-  const handleFileUploaded = (file: StorageFile) => {
+  const handleFileUploaded = (file: FileMetadata) => {
     setFiles([...files, file])
     toast.success(`File "${file.name}" uploaded and encrypted`)
   }
 
   const handleDeleteFile = async (fileId: string) => {
     try {
-      await db.deleteFile(fileId)
+      await indexedStorage.deleteFile(fileId)
       setFiles(files.filter((f) => f.id !== fileId))
       setSelectedFile(null)
       toast.success('File deleted')
@@ -126,9 +126,12 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
 
   return (
     <div className="flex flex-col h-screen bg-background">
+      {/* Privacy & Relay Status Bar */}
+      <PrivacyStatusBar publicKey={publicKey} />
+
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/95">
-        <div className="flex items-center justify-between p-4 max-w-7xl mx-auto w-full">
+        <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
               <Lock className="w-5 h-5 text-primary" />
@@ -154,94 +157,94 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex">
-        {/* Sidebar */}
-        <div className="w-64 border-r border-border bg-card/20 overflow-y-auto hidden md:block">
-          <div className="p-4 space-y-4">
-            <Button
-              onClick={handleCreateVault}
-              className="w-full"
-              size="sm"
-            >
-              + New Vault
-            </Button>
-
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Vaults
-              </p>
+      <main className="flex-1 overflow-hidden">
+        <div className="h-full flex flex-col lg:flex-row max-w-7xl mx-auto w-full">
+          {/* Sidebar - Vaults */}
+          <aside className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r border-border bg-card/30 overflow-y-auto">
+            <div className="p-4 sm:p-5 md:p-6 space-y-2">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-sm text-foreground">Vaults</h2>
+                <Button
+                  onClick={handleCreateVault}
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0"
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
               <VaultList
                 vaults={vaults}
                 selectedVault={selectedVault}
                 onSelectVault={setSelectedVault}
               />
             </div>
+          </aside>
+
+          {/* Main Content Area */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 sm:p-5 md:p-6 lg:p-8 space-y-6">
+              <Tabs defaultValue="files" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="files">Files</TabsTrigger>
+                  <TabsTrigger value="upload">Upload</TabsTrigger>
+                  <TabsTrigger value="stats">Statistics</TabsTrigger>
+                </TabsList>
+
+                <div className="flex-1 overflow-hidden">
+                  <TabsContent
+                    value="files"
+                    className="h-full m-0 overflow-y-auto"
+                  >
+                    <FileViewer
+                      files={files}
+                      selectedFile={selectedFile}
+                      onSelectFile={setSelectedFile}
+                      onDeleteFile={handleDeleteFile}
+                      vaultName={selectedVault?.name || 'Unknown'}
+                      publicKey={publicKey}
+                    />
+                  </TabsContent>
+
+                  <TabsContent
+                    value="upload"
+                    className="h-full m-0 overflow-y-auto"
+                  >
+                    {selectedVault ? (
+                      <div className="p-4 md:p-8">
+                        <FileUploadArea
+                          vaultId={selectedVault.id}
+                          publicKey={publicKey}
+                          onFileUploaded={handleFileUploaded}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <Card className="p-8 text-center">
+                          <p className="text-muted-foreground">
+                            Please select or create a vault first
+                          </p>
+                        </Card>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent
+                    value="stats"
+                    className="h-full m-0 overflow-y-auto"
+                  >
+                    <Dashboard
+                      files={files}
+                      vaults={vaults}
+                      publicKey={publicKey}
+                    />
+                  </TabsContent>
+                </div>
+              </Tabs>
+            </div>
           </div>
         </div>
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <Tabs
-            defaultValue="files"
-            className="flex-1 flex flex-col"
-          >
-            <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent px-4">
-              <TabsTrigger value="files">Files</TabsTrigger>
-              <TabsTrigger value="upload">Upload</TabsTrigger>
-              <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            </TabsList>
-
-            <div className="flex-1 overflow-hidden">
-              <TabsContent
-                value="files"
-                className="h-full m-0 overflow-y-auto"
-              >
-                <FileViewer
-                  files={files}
-                  selectedFile={selectedFile}
-                  onSelectFile={setSelectedFile}
-                  onDeleteFile={handleDeleteFile}
-                  vaultName={selectedVault?.name || 'Unknown'}
-                />
-              </TabsContent>
-
-              <TabsContent
-                value="upload"
-                className="h-full m-0 overflow-y-auto"
-              >
-                {selectedVault ? (
-                  <div className="p-4 md:p-8">
-                    <FileUploadArea
-                      vaultId={selectedVault.id}
-                      publicKey={publicKey}
-                      onFileUploaded={handleFileUploaded}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <Card className="p-8 text-center">
-                      <p className="text-muted-foreground">
-                        Please select or create a vault first
-                      </p>
-                    </Card>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent
-                value="dashboard"
-                className="h-full m-0 overflow-y-auto"
-              >
-                <Dashboard
-                  files={files}
-                  vaults={vaults}
-                  publicKey={publicKey}
-                />
-              </TabsContent>
-            </div>
-          </Tabs>
-        </div>
-      </div>
+      </main>
     </div>
   )
 }

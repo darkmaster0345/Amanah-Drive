@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button'
 import { Folder } from 'lucide-react'
-import type { Vault } from '@/lib/db'
+import type { Vault } from '@/lib/indexed-storage'
 
 interface VaultListProps {
   vaults: Vault[]

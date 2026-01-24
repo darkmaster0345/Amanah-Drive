@@ -1,22 +1,21 @@
 'use client'
 
 import React from "react"
-
 import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { Upload, Lock, CheckCircle } from 'lucide-react'
+import { Upload, Lock, CheckCircle, Plus } from 'lucide-react'
 import { toast } from '@/lib/toast'
-import { db, type StorageFile } from '@/lib/db'
-import { encryptData, deriveKeyFromPassword, hashString } from '@/lib/encryption'
+import { indexedStorage, type FileMetadata } from '@/lib/indexed-storage'
+import { deriveKeyFromPassword, hashString } from '@/lib/encryption'
 import { createBlossomClient } from '@/lib/blossom'
 import { createFileMetadataEvent, relayManager } from '@/lib/nostr'
 
 interface FileUploadAreaProps {
   vaultId: string
   publicKey: string
-  onFileUploaded: (file: StorageFile) => void
+  onFileUploaded: (file: FileMetadata) => void
 }
 
 export function FileUploadArea({
@@ -27,116 +26,160 @@ export function FileUploadArea({
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadStage, setUploadStage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const workerRef = useRef<Worker | null>(null)
+
+  // Initialize Web Worker
+  const initializeWorker = () => {
+    if (!workerRef.current) {
+      workerRef.current = new Worker('/workers/encryption.worker.ts')
+    }
+    return workerRef.current
+  }
 
   const handleFile = async (file: File) => {
     if (!file) return
 
     setIsUploading(true)
     setUploadProgress(0)
+    setUploadStage('Initializing...')
 
     try {
-      console.log('[v0] Starting file upload:', {
+      console.log('[v0] Starting chunked file upload:', {
         name: file.name,
         size: file.size,
         type: file.type,
       })
 
       // Step 1: Read file
+      setUploadStage('Reading file...')
       const fileBuffer = await file.arrayBuffer()
       const fileData = new Uint8Array(fileBuffer)
+      setUploadProgress(10)
 
-      setUploadProgress(20)
-
-      // Step 2: Encrypt file locally before upload
+      // Step 2: Derive encryption key
+      setUploadStage('Deriving encryption key...')
       const password = localStorage.getItem('vault_nostr_pubkey') || publicKey
       const { key, salt } = await deriveKeyFromPassword(password)
+      setUploadProgress(15)
 
-      // Convert file to string for encryption
-      const fileString = new TextDecoder().decode(fileData)
-      const encrypted = await encryptData(fileString, key)
+      // Step 3: Encrypt file with Web Worker
+      setUploadStage('Encrypting file (off-thread)...')
+      const worker = initializeWorker()
+      const encryptedData = await new Promise<Uint8Array>((resolve, reject) => {
+        const messageId = `encrypt-${Date.now()}`
+        const handler = (event: MessageEvent) => {
+          if (event.data.id === messageId) {
+            worker.removeEventListener('message', handler)
+            if (event.data.success) {
+              resolve(new Uint8Array(Object.values(event.data.result)))
+            } else {
+              reject(new Error(event.data.error))
+            }
+          }
+        }
+        worker.addEventListener('message', handler)
+        worker.postMessage({
+          id: messageId,
+          type: 'encrypt',
+          data: fileData,
+          key,
+        })
+      })
+      setUploadProgress(35)
 
+      // Step 4: Calculate file hash
+      setUploadStage('Computing file hash...')
+      const fileHash = await hashString(JSON.stringify(encryptedData))
+      const encryptionKeyHash = await hashString(fileHash)
       setUploadProgress(40)
 
-      // Step 3: Calculate encryption key hash
-      const encryptionKeyHash = await hashString(encrypted.ciphertext)
-
-      // Step 4: Prepare encrypted file for Blossom (would normally upload here)
-      const encryptedBuffer = new TextEncoder().encode(
-        JSON.stringify(encrypted)
+      // Step 5: Upload chunks to Blossom
+      setUploadStage('Uploading chunks to Blossom...')
+      const blossomClient = createBlossomClient('https://cdn.example.com')
+      const uploadResult = await blossomClient.uploadChunkedFile(
+        encryptedData,
+        file.name,
+        `file-${Date.now()}`,
+        (chunkIndex, totalChunks) => {
+          const chunkProgress = 40 + (chunkIndex / totalChunks) * 40
+          setUploadProgress(Math.floor(chunkProgress))
+          setUploadStage(`Uploading chunk ${chunkIndex} of ${totalChunks}...`)
+        }
       )
+      setUploadProgress(80)
 
-      setUploadProgress(60)
-
-      // Step 5: Create storage record in local database
-      const storageFile: StorageFile = {
-        id: 'file-' + Date.now() + '-' + Math.random().toString(36).substring(7),
+      // Step 6: Create metadata event for Nostr
+      setUploadStage('Publishing metadata to Nostr...')
+      const fileMetadata: FileMetadata = {
+        id: uploadResult.fileId,
+        vaultId,
         name: file.name,
-        mimeType: file.type,
+        mimeType: file.type || 'application/octet-stream',
         size: file.size,
-        encryptionKeyHash,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        vaultId,
+        encryptionKeyHash,
+        chunkHashes: uploadResult.chunks.map((c) => c.hash),
+        blossomUrls: uploadResult.chunks.map((c) => c.url),
       }
 
-      setUploadProgress(75)
-
-      // Step 6: Save to database
-      await db.addFile(storageFile)
-
+      // Save to IndexedDB
+      await indexedStorage.saveFileMetadata(fileMetadata)
       setUploadProgress(85)
 
-      // Step 7: Create Nostr NIP-94 event (metadata only)
-      const metadataEvent = createFileMetadataEvent(publicKey, {
-        url: `blob:${storageFile.id}`, // In production, use Blossom URL
-        mimeType: file.type,
-        sha256Hash: encryptionKeyHash,
+      // Create NIP-94 event
+      const nip94Event = createFileMetadataEvent(publicKey, {
+        mimeType: file.type || 'application/octet-stream',
+        chunkHashes: uploadResult.chunks.map((c) => c.hash),
         size: file.size,
         encryptionKeyHash,
         blossomServer: 'https://cdn.example.com',
         vaultId,
         fileName: file.name,
+        totalChunks: uploadResult.totalChunks,
       })
 
-      console.log('[v0] Nostr metadata event prepared:', {
-        kind: metadataEvent.kind,
-        fileId: storageFile.id,
+      console.log('[v0] NIP-94 event created:', {
+        chunks: uploadResult.totalChunks,
+        hashes: nip94Event.tags.filter((t) => t[0] === 'chunk').length,
       })
 
-      setUploadProgress(95)
+      setUploadProgress(90)
 
-      // Step 8: In production, would publish to relays
-      // await relayManager.publishEvent(metadataEvent as any)
+      // Step 7: Publish to relays (if available)
+      if (relayManager) {
+        setUploadStage('Publishing to relays...')
+        // In a real implementation, sign and publish the event
+        console.log('[v0] NIP-94 event ready for relay publication')
+      }
 
       setUploadProgress(100)
 
-      console.log('[v0] File uploaded and encrypted successfully:', {
-        fileId: storageFile.id,
-        encryptionKeyHash: encryptionKeyHash.substring(0, 8) + '...',
+      toast.success(`File "${file.name}" uploaded successfully!`, {
+        description: `${uploadResult.totalChunks} chunks encrypted and stored`,
       })
 
-      toast.success(`File "${file.name}" encrypted and stored`, {
-        description: 'Your file is now encrypted on-device',
-      })
-
-      onFileUploaded(storageFile)
+      onFileUploaded(fileMetadata)
 
       // Reset
       setTimeout(() => {
+        setIsUploading(false)
         setUploadProgress(0)
+        setUploadStage('')
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
         }
       }, 1000)
     } catch (error) {
       console.error('[v0] File upload failed:', error)
-      toast.error('Failed to upload file', {
+      toast.error('Upload failed', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
-      setUploadProgress(0)
-    } finally {
       setIsUploading(false)
+      setUploadProgress(0)
+      setUploadStage('')
     }
   }
 
@@ -145,7 +188,8 @@ export function FileUploadArea({
     setIsDragging(true)
   }
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
     setIsDragging(false)
   }
 
@@ -159,109 +203,104 @@ export function FileUploadArea({
     }
   }
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (files && files.length > 0) {
-      handleFile(files[0])
-    }
-  }
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-foreground mb-2">Upload Files</h2>
-        <p className="text-sm text-muted-foreground">
-          Files are encrypted before leaving your device. Only you can decrypt them.
-        </p>
-      </div>
-
+    <>
       <Card
+        className={`p-6 sm:p-8 border-2 border-dashed transition-colors cursor-pointer ${
+          isDragging
+            ? 'border-primary bg-primary/5'
+            : 'border-border hover:border-primary/50 hover:bg-secondary/30'
+        }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`border-2 border-dashed transition-colors p-8 text-center cursor-pointer ${
-          isDragging
-            ? 'border-primary bg-primary/5'
-            : 'border-border hover:border-primary/50'
-        }`}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !isUploading && fileInputRef.current?.click()}
       >
         <input
           ref={fileInputRef}
           type="file"
-          onChange={handleFileSelect}
+          hidden
+          onChange={(e) => {
+            const files = e.currentTarget.files
+            if (files && files.length > 0) {
+              handleFile(files[0])
+            }
+          }}
           disabled={isUploading}
-          className="hidden"
         />
 
-        {!isUploading ? (
-          <div className="space-y-4">
-            <div className="flex justify-center">
+        <div className="flex flex-col items-center justify-center gap-4 text-center">
+          {!isUploading ? (
+            <>
               <div className="p-3 bg-primary/10 rounded-lg">
                 <Upload className="w-8 h-8 text-primary" />
               </div>
-            </div>
 
-            <div>
-              <p className="text-lg font-semibold text-foreground mb-1">
-                {isDragging ? 'Drop your file here' : 'Drag files or click to upload'}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Any file type supported • Encrypted client-side
-              </p>
-            </div>
-
-            <Button
-              className="mt-4"
-              onClick={(e) => {
-                e.stopPropagation()
-                fileInputRef.current?.click()
-              }}
-            >
-              Choose File
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <div className="p-3 bg-accent/10 rounded-lg">
-                <Lock className="w-8 h-8 text-accent" />
+              <div>
+                <h3 className="font-semibold text-foreground mb-1">
+                  Drop file to upload
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  or click to browse
+                </p>
               </div>
-            </div>
 
-            <div>
-              <p className="text-lg font-semibold text-foreground mb-3">
-                Encrypting and uploading...
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Lock className="w-3 h-3" />
+                End-to-end encrypted
               </p>
-              <Progress value={uploadProgress} className="h-2" />
-              <p className="text-xs text-muted-foreground mt-2">
-                {uploadProgress}% • Your file is being encrypted
-              </p>
-            </div>
-
-            {uploadProgress === 100 && (
-              <div className="flex items-center justify-center gap-2 text-sm text-accent">
-                <CheckCircle className="w-4 h-4" />
-                Complete
+            </>
+          ) : (
+            <>
+              <div className="p-3 bg-primary/10 rounded-lg animate-pulse">
+                <CheckCircle className="w-8 h-8 text-primary" />
               </div>
-            )}
-          </div>
+
+              <div className="w-full space-y-3">
+                <p className="text-sm font-semibold text-foreground">
+                  {uploadStage}
+                </p>
+                
+                {/* Segmented Progress Bar (5MB chunks) */}
+                <div className="grid grid-cols-8 gap-1 h-2">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`rounded-sm transition-all ${
+                        uploadProgress > (i + 1) * 12.5
+                          ? 'bg-primary'
+                          : uploadProgress > i * 12.5
+                            ? 'bg-primary/60'
+                            : 'bg-secondary/50'
+                      }`}
+                      title={`Chunk ${i + 1}: ${Math.min((i + 1) * 5, 40)}MB`}
+                    />
+                  ))}
+                </div>
+                
+                <p className="text-xs text-muted-foreground">
+                  {uploadProgress}% complete
+                </p>
+              </div>
+            </>
         )}
-      </Card>
+      </div>
+    </Card>
 
-      <Card className="p-4 bg-accent/5 border-accent/20">
-        <div className="flex gap-3">
-          <Lock className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="font-semibold text-accent mb-1">End-to-End Encrypted</p>
-            <ul className="text-xs text-muted-foreground space-y-1">
-              <li>✓ Encrypted before upload</li>
-              <li>✓ Server cannot read content</li>
-              <li>✓ Only accessible with your key</li>
-            </ul>
-          </div>
-        </div>
-      </Card>
-    </div>
+      {/* Floating Action Button for Upload */}
+      <Button
+        onClick={() => !isUploading && fileInputRef.current?.click()}
+        disabled={isUploading}
+        size="lg"
+        className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 rounded-full w-14 h-14 sm:w-16 sm:h-16 shadow-lg hover:shadow-xl transition-all"
+        title="Upload file"
+      >
+        {isUploading ? (
+          <CheckCircle className="w-6 h-6 sm:w-7 sm:h-7 animate-spin" />
+        ) : (
+          <Plus className="w-6 h-6 sm:w-7 sm:h-7" />
+        )}
+      </Button>
+    </>
   )
 }
