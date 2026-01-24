@@ -269,51 +269,65 @@ export class BlossomClient {
           server: this.serverUrl,
         });
 
-        // Upload to satellite.earth with minimal headers
-        const uploadUrl = `${this.serverUrl}/upload`;
-        
-        try {
-          const response = await fetch(uploadUrl, {
-            method: 'PUT',
-            headers: {
-              'Authorization': authHeader,
-            },
-            body: chunkData,
-            mode: 'cors',
-            credentials: 'omit',
-          });
+        // Try hash-addressed route first, then API fallback
+        const uploadUrls = [
+          `${this.serverUrl}/${chunkHash}`, // Hash-addressed route: satellite.earth/[hex-hash]
+          'https://api.satellite.earth/v1/media', // API fallback
+        ];
 
-          if (response.status >= 200 && response.status < 300) {
-            // Success
-            console.log('[v0] Chunk uploaded successfully:', {
-              chunkIndex: i,
-              server: this.serverUrl,
-              hash: chunkHash.substring(0, 8) + '...',
+        let uploadSuccess = false;
+        let uploadError: Error | null = null;
+
+        for (const uploadUrl of uploadUrls) {
+          try {
+            console.log('[v0] Attempting upload to:', uploadUrl);
+
+            const response = await fetch(uploadUrl, {
+              method: 'PUT',
+              headers: {
+                'Authorization': authHeader,
+              },
+              body: chunkData,
+              mode: 'cors',
+              credentials: 'omit',
             });
 
-            chunks.push({
-              chunkIndex: i,
-              hash: chunkHash,
-              size: chunkData.byteLength,
-              url: `${this.serverUrl}/file/${chunkHash}`,
-            });
+            if (response.status >= 200 && response.status < 300) {
+              // Success
+              console.log('[v0] Chunk uploaded successfully to:', uploadUrl);
 
-            onChunkProgress?.(i + 1, totalChunks);
-          } else {
-            // Log error details
-            const errorText = await response.text();
-            console.error('[v0] Upload failed:', {
-              status: response.status,
-              statusText: response.statusText,
-              errorDetails: errorText.substring(0, 300),
-            });
-            throw new Error(
-              `Upload failed: ${response.status} ${response.statusText}`
-            );
+              chunks.push({
+                chunkIndex: i,
+                hash: chunkHash,
+                size: chunkData.byteLength,
+                url: `${this.serverUrl}/${chunkHash}`,
+              });
+
+              onChunkProgress?.(i + 1, totalChunks);
+              uploadSuccess = true;
+              break;
+            } else {
+              // Log error details for this URL
+              const errorText = await response.text();
+              console.warn('[v0] Upload failed for', uploadUrl, ':', {
+                status: response.status,
+                statusText: response.statusText,
+                errorDetails: errorText.substring(0, 200),
+              });
+              uploadError = new Error(
+                `${uploadUrl}: ${response.status} ${response.statusText}`
+              );
+            }
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            console.warn('[v0] Upload error for', uploadUrl, ':', errorMsg);
+            uploadError = error instanceof Error ? error : new Error(errorMsg);
           }
-        } catch (error) {
-          console.error('[v0] Upload error:', error);
-          throw error;
+        }
+
+        if (!uploadSuccess) {
+          console.error('[v0] Upload failed on all endpoints:', uploadError?.message);
+          throw uploadError || new Error('Upload failed on all endpoints');
         }
       }
 
