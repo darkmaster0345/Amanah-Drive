@@ -11,6 +11,7 @@ import { indexedStorage, type FileMetadata } from '@/lib/indexed-storage'
 import { deriveKeyFromPassword, hashString } from '@/lib/encryption'
 import { createBlossomClient } from '@/lib/blossom'
 import { createFileMetadataEvent, relayManager } from '@/lib/nostr'
+import { createEncryptionWorker, dispatchWorkerTask } from '@/lib/worker-factory'
 
 interface FileUploadAreaProps {
   vaultId: string
@@ -66,34 +67,52 @@ export function FileUploadArea({
 
       // Step 3: Encrypt file with Web Worker
       setUploadStage('Encrypting file (off-thread)...')
-      const worker = initializeWorker()
-      const encryptedData = await new Promise<Uint8Array>((resolve, reject) => {
-        const messageId = `encrypt-${Date.now()}`
-        const handler = (event: MessageEvent) => {
-          if (event.data.id === messageId) {
-            worker.removeEventListener('message', handler)
-            if (event.data.success) {
-              resolve(new Uint8Array(Object.values(event.data.result)))
-            } else {
-              reject(new Error(event.data.error))
-            }
-          }
-        }
-        worker.addEventListener('message', handler)
-        worker.postMessage({
-          id: messageId,
-          type: 'encrypt',
-          data: fileData,
-          key,
-        })
+      const worker = createEncryptionWorker()
+      
+      const encryptionResult = await dispatchWorkerTask(worker, {
+        id: `encrypt-${Date.now()}`,
+        type: 'encrypt',
+        data: fileData,
+        key,
       })
-      setUploadProgress(35)
+
+      if (!encryptionResult.success) {
+        throw new Error(`Encryption failed: ${encryptionResult.error}`)
+      }
+
+      // Reconstruct Uint8Array from result
+      const encryptedDataObj = encryptionResult.result
+      let encryptedData: Uint8Array
+      
+      if (encryptedDataObj && typeof encryptedDataObj === 'object') {
+        if (encryptedDataObj instanceof Uint8Array) {
+          encryptedData = encryptedDataObj
+        } else if (encryptedDataObj.ciphertext) {
+          // It's an EncryptedData object from the worker
+          const binaryString = atob(encryptedDataObj.ciphertext)
+          encryptedData = new Uint8Array(binaryString.length)
+          for (let i = 0; i < binaryString.length; i++) {
+            encryptedData[i] = binaryString.charCodeAt(i)
+          }
+        } else {
+          throw new Error('Invalid encryption result format')
+        }
+      } else {
+        throw new Error('No encryption result received')
+      }
+
+      console.log('[v0] File encrypted:', {
+        originalSize: file.size,
+        encryptedSize: encryptedData.length,
+      })
+
+      setUploadProgress(40)
 
       // Step 4: Calculate file hash
       setUploadStage('Computing file hash...')
-      const fileHash = await hashString(JSON.stringify(encryptedData))
+      const fileHash = await hashString(file.name + file.size + Date.now())
       const encryptionKeyHash = await hashString(fileHash)
-      setUploadProgress(40)
+      setUploadProgress(50)
 
       // Step 5: Upload chunks to Blossom
       setUploadStage('Uploading chunks to Blossom...')
@@ -103,12 +122,13 @@ export function FileUploadArea({
         file.name,
         `file-${Date.now()}`,
         (chunkIndex, totalChunks) => {
-          const chunkProgress = 40 + (chunkIndex / totalChunks) * 40
+          // Map chunk progress from 50% to 85%
+          const chunkProgress = 50 + (chunkIndex / totalChunks) * 35
           setUploadProgress(Math.floor(chunkProgress))
           setUploadStage(`Uploading chunk ${chunkIndex} of ${totalChunks}...`)
         }
       )
-      setUploadProgress(80)
+      setUploadProgress(85)
 
       // Step 6: Create metadata event for Nostr
       setUploadStage('Publishing metadata to Nostr...')

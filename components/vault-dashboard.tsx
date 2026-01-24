@@ -9,6 +9,7 @@ import { VaultList } from '@/components/vault-list'
 import { FileViewer } from '@/components/file-viewer'
 import { Dashboard } from '@/components/dashboard'
 import { PrivacyStatusBar } from '@/components/privacy-status-bar'
+import { SettingsPanel } from '@/components/settings-panel'
 import { LogOut, Lock, Plus } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { indexedStorage, type FileMetadata, type Vault } from '@/lib/indexed-storage'
@@ -144,15 +145,18 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
             </div>
           </div>
 
-          <Button
-            onClick={onLogout}
-            variant="outline"
-            size="sm"
-            className="gap-2 bg-transparent"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </Button>
+          <div className="flex items-center gap-2">
+            <SettingsPanel />
+            <Button
+              onClick={onLogout}
+              variant="outline"
+              size="sm"
+              className="gap-2 bg-transparent"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </Button>
+          </div>
         </div>
       </header>
 
