@@ -245,9 +245,9 @@ export class BlossomClient {
     
     // List of working Blossom servers to try in order
     const FALLBACK_SERVERS = [
+      'https://satellite.earth',
       'https://blossom.primal.net',
       'https://cdn.nostr.build',
-      'https://nostr.build',
     ];
 
     try {
@@ -291,23 +291,22 @@ export class BlossomClient {
           // Convert to Blob for proper fetch body
           const blob = new Blob([chunkData], { type: 'application/octet-stream' });
 
-          uploadResponse = await fetch(`${this.serverUrl}`, {
+          uploadResponse = await fetch(`${this.serverUrl}/upload`, {
             method: 'PUT',
             headers: {
               'Authorization': authHeader,
-              'Content-Type': 'application/octet-stream',
             },
             body: blob,
             mode: 'cors',
             credentials: 'omit',
           });
 
-          if (uploadResponse.ok) {
+          if (uploadResponse && uploadResponse.status >= 200 && uploadResponse.status < 300) {
             uploadSuccess = true;
-            console.log('[v0] Chunk uploaded to primary server');
+            console.log('[v0] Chunk uploaded to primary server:', this.serverUrl);
           } else {
             primaryError = new Error(
-              `Primary: ${uploadResponse.status} ${uploadResponse.statusText}`
+              `Primary: ${uploadResponse?.status || 'unknown'} ${uploadResponse?.statusText || 'error'}`
             );
             console.warn('[v0] Primary server failed:', primaryError.message);
           }
@@ -316,47 +315,53 @@ export class BlossomClient {
           console.warn('[v0] Primary server error:', primaryError.message);
         }
 
-        // Fallback to blossom.io if primary fails
+        // Fallback to other servers if primary fails
         if (!uploadSuccess) {
           for (const FALLBACK_SERVER of FALLBACK_SERVERS) {
+            if (FALLBACK_SERVER === this.serverUrl) continue; // Skip if same as primary
+            
             console.log('[v0] Trying fallback server:', FALLBACK_SERVER);
             try {
               const blob = new Blob([chunkData], { type: 'application/octet-stream' });
 
-              const fallbackResponse = await fetch(`${FALLBACK_SERVER}`, {
+              const fallbackResponse = await fetch(`${FALLBACK_SERVER}/upload`, {
                 method: 'PUT',
                 headers: {
                   'Authorization': authHeader,
-                  'Content-Type': 'application/octet-stream',
                 },
                 body: blob,
                 mode: 'cors',
                 credentials: 'omit',
               });
 
-              if (fallbackResponse.ok) {
+              if (fallbackResponse && fallbackResponse.status >= 200 && fallbackResponse.status < 300) {
                 uploadSuccess = true;
                 uploadResponse = fallbackResponse;
-                console.log('[v0] Chunk uploaded to fallback server');
+                console.log('[v0] Chunk uploaded to fallback server:', FALLBACK_SERVER);
                 break;
               } else {
-                console.warn('[v0] Fallback server failed:', FALLBACK_SERVER);
+                console.warn('[v0] Fallback server failed:', FALLBACK_SERVER, fallbackResponse?.status);
               }
             } catch (fallbackError) {
               const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-              console.warn('[v0] Fallback server error:', message);
+              console.warn('[v0] Fallback server error:', FALLBACK_SERVER, message);
             }
           }
         }
 
+        // Only proceed if upload was successful
+        if (!uploadSuccess) {
+          throw new Error(`Chunk ${i} upload failed on all servers`);
+        }
+
         // Parse response and store chunk info
         try {
-          const data = uploadResponse ? await uploadResponse.json() : { url: `${this.serverUrl}/${chunkHash}` };
+          const data = uploadResponse ? await uploadResponse.json() : { url: `${this.serverUrl}/upload/${chunkHash}` };
           chunks.push({
             chunkIndex: i,
             hash: chunkHash,
             size: chunkData.byteLength,
-            url: data.url || `${this.serverUrl}/${chunkHash}`,
+            url: data.url || `${this.serverUrl}/upload/${chunkHash}`,
           });
         } catch {
           // If response isn't JSON, use fallback URL
@@ -364,16 +369,17 @@ export class BlossomClient {
             chunkIndex: i,
             hash: chunkHash,
             size: chunkData.byteLength,
-            url: `${this.serverUrl}/${chunkHash}`,
+            url: `${this.serverUrl}/upload/${chunkHash}`,
           });
         }
 
         onChunkProgress?.(i + 1, totalChunks);
 
-        console.log('[v0] Chunk completed:', {
+        console.log('[v0] Chunk completed successfully:', {
           chunkIndex: i,
           totalChunks,
           hash: chunkHash.substring(0, 8) + '...',
+          size: chunkData.byteLength,
         });
       }
 
