@@ -282,37 +282,57 @@ export class BlossomClient {
           server: this.serverUrl,
         });
 
-        // Try primary Blossom server first
+        // Try primary Blossom server first with CORS proxy
         let uploadSuccess = false;
         let uploadResponse: Response | null = null;
         let primaryError: Error | null = null;
 
-        try {
-          // Convert to Blob for proper fetch body
-          const blob = new Blob([chunkData], { type: 'application/octet-stream' });
+        // CORS proxy URLs to bypass browser restrictions
+        const CORS_PROXIES = [
+          'https://corsproxy.io/?',
+          'https://cors-anywhere.herokuapp.com/',
+        ];
 
-          uploadResponse = await fetch(`${this.serverUrl}/upload`, {
-            method: 'PUT',
-            headers: {
-              'Authorization': authHeader,
-            },
-            body: blob,
-            mode: 'cors',
-            credentials: 'omit',
-          });
+        // Try each CORS proxy with primary server
+        for (const corsProxy of CORS_PROXIES) {
+          const uploadUrl = `${corsProxy}${this.serverUrl}/upload`;
+          console.log('[v0] Trying upload with CORS proxy:', corsProxy);
 
-          if (uploadResponse && uploadResponse.status >= 200 && uploadResponse.status < 300) {
-            uploadSuccess = true;
-            console.log('[v0] Chunk uploaded to primary server:', this.serverUrl);
-          } else {
-            primaryError = new Error(
-              `Primary: ${uploadResponse?.status || 'unknown'} ${uploadResponse?.statusText || 'error'}`
-            );
-            console.warn('[v0] Primary server failed:', primaryError.message);
+          try {
+            // Convert to Blob for proper fetch body
+            const blob = new Blob([chunkData], { type: 'application/octet-stream' });
+
+            uploadResponse = await fetch(uploadUrl, {
+              method: 'PUT',
+              headers: {
+                'Authorization': authHeader,
+              },
+              body: blob,
+              mode: 'cors',
+              credentials: 'omit',
+            });
+
+            if (uploadResponse && uploadResponse.status >= 200 && uploadResponse.status < 300) {
+              uploadSuccess = true;
+              console.log('[v0] Chunk uploaded to primary server via', corsProxy);
+              break;
+            } else {
+              // Log detailed error info
+              const errorText = await uploadResponse?.text();
+              console.warn('[v0] Primary server failed with status:', {
+                proxy: corsProxy,
+                status: uploadResponse?.status,
+                statusText: uploadResponse?.statusText,
+                errorDetails: errorText?.substring(0, 200),
+              });
+              primaryError = new Error(
+                `Primary (${corsProxy}): ${uploadResponse?.status} ${uploadResponse?.statusText}`
+              );
+            }
+          } catch (error) {
+            primaryError = error instanceof Error ? error : new Error(String(error));
+            console.warn('[v0] Primary server error with', corsProxy, ':', primaryError.message);
           }
-        } catch (error) {
-          primaryError = error instanceof Error ? error : new Error(String(error));
-          console.warn('[v0] Primary server error:', primaryError.message);
         }
 
         // Fallback to other servers if primary fails
@@ -321,31 +341,47 @@ export class BlossomClient {
             if (FALLBACK_SERVER === this.serverUrl) continue; // Skip if same as primary
             
             console.log('[v0] Trying fallback server:', FALLBACK_SERVER);
-            try {
-              const blob = new Blob([chunkData], { type: 'application/octet-stream' });
+            
+            // Try each CORS proxy with fallback server
+            for (const corsProxy of CORS_PROXIES) {
+              const uploadUrl = `${corsProxy}${FALLBACK_SERVER}/upload`;
+              
+              try {
+                const blob = new Blob([chunkData], { type: 'application/octet-stream' });
 
-              const fallbackResponse = await fetch(`${FALLBACK_SERVER}/upload`, {
-                method: 'PUT',
-                headers: {
-                  'Authorization': authHeader,
-                },
-                body: blob,
-                mode: 'cors',
-                credentials: 'omit',
-              });
+                const fallbackResponse = await fetch(uploadUrl, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': authHeader,
+                  },
+                  body: blob,
+                  mode: 'cors',
+                  credentials: 'omit',
+                });
 
-              if (fallbackResponse && fallbackResponse.status >= 200 && fallbackResponse.status < 300) {
-                uploadSuccess = true;
-                uploadResponse = fallbackResponse;
-                console.log('[v0] Chunk uploaded to fallback server:', FALLBACK_SERVER);
-                break;
-              } else {
-                console.warn('[v0] Fallback server failed:', FALLBACK_SERVER, fallbackResponse?.status);
+                if (fallbackResponse && fallbackResponse.status >= 200 && fallbackResponse.status < 300) {
+                  uploadSuccess = true;
+                  uploadResponse = fallbackResponse;
+                  console.log('[v0] Chunk uploaded to fallback server:', FALLBACK_SERVER, 'via', corsProxy);
+                  break;
+                } else {
+                  // Log detailed error info
+                  const errorText = await fallbackResponse?.text();
+                  console.warn('[v0] Fallback server failed:', {
+                    server: FALLBACK_SERVER,
+                    proxy: corsProxy,
+                    status: fallbackResponse?.status,
+                    statusText: fallbackResponse?.statusText,
+                    errorDetails: errorText?.substring(0, 200),
+                  });
+                }
+              } catch (fallbackError) {
+                const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+                console.warn('[v0] Fallback server error:', FALLBACK_SERVER, 'via', corsProxy, ':', message);
               }
-            } catch (fallbackError) {
-              const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-              console.warn('[v0] Fallback server error:', FALLBACK_SERVER, message);
             }
+            
+            if (uploadSuccess) break; // Exit outer loop if successful
           }
         }
 
