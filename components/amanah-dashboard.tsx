@@ -2,27 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Shield,
-  Vault,
-  Share2,
-  Radio,
-  Settings,
-  Eye,
-  EyeOff,
-  ChevronRight,
-  Lock,
-  Unlock,
-  FileText,
-  ImageIcon,
-  Film,
-  Music,
-  Archive,
-  MoreHorizontal,
-  Plus,
-  Search,
-  LogOut,
-} from 'lucide-react'
+import { Shield, Vault, Share2, Radio, Settings, Eye, EyeOff, ChevronRight, Lock, Unlock, FileText, ImageIcon, Film, Music, Archive, MoreHorizontal, Plus, Search, LogOut, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -63,14 +43,16 @@ export function AmanahDashboard({
   onCreateVault,
   onLogout,
 }: AmanahDashboardProps) {
-  const [privacyMode, setPrivacyMode] = useState(false)
+  const [stealthMode, setStealthMode] = useState(false)
   const [activeNav, setActiveNav] = useState<'vault' | 'shared' | 'relays' | 'settings'>('vault')
   const [searchQuery, setSearchQuery] = useState('')
+  const [isDragActive, setIsDragActive] = useState(false)
+  const [privacyMode, setPrivacyMode] = useState(false)
 
   const maskedPubkey = `npub1...${publicKey.substring(publicKey.length - 4)}`
   
   const filteredFiles = files.filter(file => 
-    privacyMode ? true : file.name.toLowerCase().includes(searchQuery.toLowerCase())
+    file.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const getFileIcon = (mimeType: string) => {
@@ -93,58 +75,110 @@ export function AmanahDashboard({
 
   return (
     <TooltipProvider>
-      <div className="h-screen flex bg-background overflow-hidden">
+      <motion.div 
+        className="h-screen flex bg-background overflow-hidden"
+        animate={{ scale: isDragActive ? 0.98 : 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      >
         {/* Left Sidebar - Slim Navigation */}
         <aside className="w-16 md:w-20 flex flex-col items-center py-6 bg-sidebar border-r border-sidebar-border">
-          {/* Logo */}
-          <div className="mb-8">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center gold-glow">
-              <Shield className="w-5 h-5 text-primary" />
+          {/* Header with Stealth Toggle */}
+          <div className="flex-1 flex flex-col border-b border-sidebar-border pb-6">
+            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary/10 gold-glow cursor-pointer hover:bg-primary/15 transition-colors">
+              <Vault className="w-6 h-6 text-primary" />
             </div>
           </div>
 
           {/* Navigation Icons */}
-          <nav className="flex-1 flex flex-col items-center gap-2">
-            {[
-              { id: 'vault', icon: Vault, label: 'Vault' },
-              { id: 'shared', icon: Share2, label: 'Shared' },
-              { id: 'relays', icon: Radio, label: 'Relays' },
-              { id: 'settings', icon: Settings, label: 'Settings' },
-            ].map((item) => (
-              <Tooltip key={item.id}>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => setActiveNav(item.id as typeof activeNav)}
-                    className={cn(
-                      'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200',
-                      activeNav === item.id
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                    )}
-                  >
-                    <item.icon className="w-5 h-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                  <p>{item.label}</p>
-                </TooltipContent>
-              </Tooltip>
-            ))}
+          <nav className="flex-1 flex flex-col items-center gap-4 py-6">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setActiveNav('vault')}
+                  className={cn(
+                    'w-10 h-10 rounded-lg flex items-center justify-center transition-all',
+                    activeNav === 'vault'
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                      : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                  )}
+                >
+                  <Shield className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Vault</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setActiveNav('shared')}
+                  className={cn(
+                    'w-10 h-10 rounded-lg flex items-center justify-center transition-all',
+                    activeNav === 'shared'
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                      : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                  )}
+                >
+                  <Share2 className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Shared</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setActiveNav('relays')}
+                  className={cn(
+                    'w-10 h-10 rounded-lg flex items-center justify-center transition-all relative',
+                    activeNav === 'relays'
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                      : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                  )}
+                >
+                  <Radio className="w-5 h-5" />
+                  <motion.div
+                    className="absolute inset-0 rounded-lg"
+                    animate={{ opacity: [0.4, 0.8, 0.4] }}
+                    transition={{ duration: 3, repeat: Infinity }}
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Relays</TooltipContent>
+            </Tooltip>
           </nav>
+
+          {/* Stealth Mode Toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setStealthMode(!stealthMode)}
+                className={cn(
+                  'w-10 h-10 rounded-lg flex items-center justify-center transition-all mb-6',
+                  stealthMode
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                {stealthMode ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {stealthMode ? 'Disable Stealth Mode' : 'Enable Stealth Mode'}
+            </TooltipContent>
+          </Tooltip>
 
           {/* Logout */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={onLogout}
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-200"
+                className="w-10 h-10 rounded-lg flex items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent transition-all"
               >
                 <LogOut className="w-5 h-5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Logout</p>
-            </TooltipContent>
+            <TooltipContent side="right">Logout</TooltipContent>
           </Tooltip>
         </aside>
 
@@ -179,17 +213,17 @@ export function AmanahDashboard({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setPrivacyMode(!privacyMode)}
+                    onClick={() => setStealthMode(!stealthMode)}
                     className={cn(
                       'rounded-xl transition-all',
-                      privacyMode && 'bg-accent/10 text-accent'
+                      stealthMode && 'bg-accent/10 text-accent'
                     )}
                   >
-                    {privacyMode ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    {stealthMode ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{privacyMode ? 'Show file names' : 'Hide file names'}</p>
+                  <p>{stealthMode ? 'Disable Stealth Mode' : 'Enable Stealth Mode'}</p>
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -284,9 +318,9 @@ export function AmanahDashboard({
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -20 }}
-                            transition={{ delay: index * 0.05 }}
+                            transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 30 }}
                             onClick={() => onSelectFile(file)}
-                            className="p-4 rounded-xl glass-card cursor-pointer hover:border-primary/30 transition-all group"
+                            className="p-4 rounded-xl glass-card cursor-pointer hover:border-primary/30 transition-all file-card group"
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
@@ -294,8 +328,8 @@ export function AmanahDashboard({
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className={cn(
-                                  'font-medium text-foreground truncate',
-                                  privacyMode && 'blur-sm'
+                                  'font-medium text-foreground truncate transition-all',
+                                  stealthMode && 'blur-sm'
                                 )}>
                                   {file.name}
                                 </p>
@@ -432,7 +466,7 @@ export function AmanahDashboard({
             Amanah v1.0 - Sovereign Storage
           </div>
         </footer>
-      </div>
+      </motion.div>
     </TooltipProvider>
   )
 }

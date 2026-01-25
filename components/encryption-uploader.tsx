@@ -13,6 +13,8 @@ interface EncryptionUploaderProps {
   vaultId: string
   publicKey: string
   onFileUpload: (file: FileMetadata) => void
+  stealthMode?: boolean
+  onDragStateChange?: (isDragging: boolean) => void
 }
 
 type UploadStage = 'idle' | 'scanning' | 'sharding' | 'encrypting' | 'uploading' | 'complete' | 'error'
@@ -21,6 +23,8 @@ export function EncryptionUploader({
   vaultId,
   publicKey,
   onFileUpload,
+  stealthMode = false,
+  onDragStateChange,
 }: EncryptionUploaderProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [stage, setStage] = useState<UploadStage>('idle')
@@ -32,12 +36,14 @@ export function EncryptionUploader({
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(true)
-  }, [])
+    onDragStateChange?.(true)
+  }, [onDragStateChange])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
-  }, [])
+    onDragStateChange?.(false)
+  }, [onDragStateChange])
 
   const simulateUpload = async (file: File) => {
     setFileName(file.name)
