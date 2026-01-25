@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Shield, Upload, Lock, Loader2, Check, X } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
+import { uploadFile, type UploadProgress, type UploadStage } from '@/lib/upload-service'
 import type { FileMetadata } from '@/lib/indexed-storage'
 
 interface EncryptionUploaderProps {
@@ -16,8 +17,6 @@ interface EncryptionUploaderProps {
   stealthMode?: boolean
   onDragStateChange?: (isDragging: boolean) => void
 }
-
-type UploadStage = 'idle' | 'scanning' | 'sharding' | 'encrypting' | 'uploading' | 'complete' | 'error'
 
 export function EncryptionUploader({
   vaultId,
@@ -29,6 +28,8 @@ export function EncryptionUploader({
   const [isDragOver, setIsDragOver] = useState(false)
   const [stage, setStage] = useState<UploadStage>('idle')
   const [progress, setProgress] = useState(0)
+  const [currentChunk, setCurrentChunk] = useState(0)
+  const [totalChunks, setTotalChunks] = useState(0)
   const [fileName, setFileName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -58,88 +59,105 @@ export function EncryptionUploader({
     }, 50)
   }, [onDragStateChange])
 
-  const simulateUpload = async (file: File) => {
+  const handleUpload = async (file: File) => {
     setFileName(file.name)
     setError(null)
-    
-    // Stage 1: Scanning
-    setStage('scanning')
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    // Stage 2: Sharding
-    setStage('sharding')
-    await new Promise(resolve => setTimeout(resolve, 1200))
-    
-    // Stage 3: Encrypting
-    setStage('encrypting')
     setProgress(0)
-    for (let i = 0; i <= 100; i += 10) {
-      setProgress(i)
-      await new Promise(resolve => setTimeout(resolve, 100))
+    setCurrentChunk(0)
+    setTotalChunks(0)
+
+    // Handle progress updates from the upload service
+    const handleProgress = (uploadProgress: UploadProgress) => {
+      setStage(uploadProgress.stage)
+      setProgress(uploadProgress.progress)
+      setCurrentChunk(uploadProgress.currentChunk)
+      setTotalChunks(uploadProgress.totalChunks)
+      
+      if (uploadProgress.stage === 'error') {
+        setError(uploadProgress.message)
+      }
     }
-    
-    // Stage 4: Uploading
-    setStage('uploading')
-    setProgress(0)
-    for (let i = 0; i <= 100; i += 5) {
-      setProgress(i)
-      await new Promise(resolve => setTimeout(resolve, 80))
+
+    try {
+      // Call the real upload service with AES-GCM encryption
+      const result = await uploadFile(file, vaultId, publicKey, handleProgress)
+
+      if (result.success && result.fileMetadata) {
+        // Notify parent component of successful upload
+        onFileUpload(result.fileMetadata)
+        
+        // Reset after showing success
+        setTimeout(() => {
+          setStage('idle')
+          setProgress(0)
+          setCurrentChunk(0)
+          setTotalChunks(0)
+          setFileName('')
+        }, 2000)
+      } else {
+        setStage('error')
+        setError(result.error || 'Upload failed')
+        
+        // Reset after showing error
+        setTimeout(() => {
+          setStage('idle')
+          setProgress(0)
+          setError(null)
+          setFileName('')
+        }, 3000)
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Upload failed'
+      setStage('error')
+      setError(errorMessage)
+      
+      setTimeout(() => {
+        setStage('idle')
+        setProgress(0)
+        setError(null)
+        setFileName('')
+      }, 3000)
     }
-    
-    // Complete
-    setStage('complete')
-    
-    // Create mock file metadata
-    const mockFile: FileMetadata = {
-      id: `file-${Date.now()}`,
-      name: file.name,
-      size: file.size,
-      mimeType: file.type || 'application/octet-stream',
-      vaultId,
-      encryptionKeyHash: 'mock-hash-' + Date.now(),
-      chunkHashes: ['shard1', 'shard2', 'shard3', 'shard4'],
-      totalChunks: 4,
-      blossomServer: 'https://nostr.build',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }
-    
-    onFileUpload(mockFile)
-    
-    // Reset after delay
-    setTimeout(() => {
-      setStage('idle')
-      setProgress(0)
-      setFileName('')
-    }, 2000)
   }
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
+    onDragStateChange?.(false)
     
     const file = e.dataTransfer.files[0]
     if (file) {
-      await simulateUpload(file)
+      await handleUpload(file)
     }
-  }, [vaultId, publicKey, onFileUpload])
+  }, [vaultId, publicKey, onFileUpload, onDragStateChange])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      await simulateUpload(file)
+      await handleUpload(file)
+    }
+    // Reset input so same file can be selected again
+    if (inputRef.current) {
+      inputRef.current.value = ''
     }
   }
 
   const getStageMessage = () => {
     switch (stage) {
-      case 'scanning': return 'Scanning file...'
-      case 'sharding': return 'Creating encrypted shards...'
-      case 'encrypting': return 'Encrypting data...'
-      case 'uploading': return 'Uploading to Blossom relays...'
-      case 'complete': return 'Upload complete!'
-      case 'error': return error || 'Upload failed'
-      default: return 'Drop files to encrypt & upload'
+      case 'scanning': 
+        return totalChunks > 0 ? `Scanning: ${totalChunks} shards needed` : 'Scanning file...'
+      case 'sharding': 
+        return `Creating ${totalChunks} encrypted shards...`
+      case 'encrypting': 
+        return currentChunk > 0 ? `Encrypting shard ${currentChunk}/${totalChunks}...` : 'Generating encryption key...'
+      case 'uploading': 
+        return currentChunk > 0 ? `Uploading shard ${currentChunk}/${totalChunks}...` : 'Connecting to Blossom relay...'
+      case 'complete': 
+        return `Encrypted & uploaded (${totalChunks} shards)`
+      case 'error': 
+        return error || 'Upload failed'
+      default: 
+        return 'Drop files to encrypt & upload'
     }
   }
 

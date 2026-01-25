@@ -288,14 +288,16 @@ export function AmanahDashboard({
                   ))}
                 </div>
 
-                {/* Encryption Uploader */}
-                {selectedVault && (
-                  <EncryptionUploader
-                    vaultId={selectedVault.id}
-                    publicKey={publicKey}
-                    onFileUpload={onFileUpload}
-                  />
-                )}
+{/* Encryption Uploader */}
+{selectedVault && (
+<EncryptionUploader
+vaultId={selectedVault.id}
+publicKey={publicKey}
+onFileUpload={onFileUpload}
+stealthMode={stealthMode}
+onDragStateChange={setIsDragActive}
+/>
+)}
               </div>
 
               {/* Column 2: File Explorer */}

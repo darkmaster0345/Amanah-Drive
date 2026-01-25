@@ -71,20 +71,22 @@ const FileCardComponent = ({
         {formatFileSize(file.size)}
       </p>
 
-      {/* Shard Map - Memoized separately */}
+      {/* Shard Map - Shows actual chunk count from encrypted file */}
       <div className="mt-3 pt-3 border-t border-border/50">
-        <div className="flex gap-1">
-          {Array.from({ length: file.totalChunks || 4 }).map((_, i) => (
+        <div className="flex gap-1 items-center">
+          {Array.from({ length: file.chunkHashes?.length || file.totalChunks || 4 }).map((_, i) => (
             <motion.div
               key={i}
-              className="w-1 h-1 rounded-full bg-muted-foreground/50 will-change-transform"
-              style={{ backfaceVisibility: 'hidden' }}
-              animate={{
-                backgroundColor: i < Math.floor((Math.random() * (file.totalChunks || 4)) + 1) ? '#D4AF37' : '#4A4A4A',
-              }}
-              transition={{ duration: 0.5 }}
+              className="w-1.5 h-1.5 rounded-full will-change-transform"
+              style={{ backfaceVisibility: 'hidden', backgroundColor: '#D4AF37' }}
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: i * 0.05, duration: 0.2 }}
             />
           ))}
+          <span className="text-xs text-muted-foreground ml-2">
+            {file.chunkHashes?.length || file.totalChunks || 0} shards
+          </span>
         </div>
       </div>
 
