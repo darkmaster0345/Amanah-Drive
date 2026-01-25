@@ -81,8 +81,9 @@ export function EncryptionUploader({
     }
 
     // Save key if provided
-    if (privateKeyInput.startsWith('nsec')) {
-      localStorage.setItem('nostr_nsec', privateKeyInput);
+    const keyToSave = privateKeyInput.trim();
+    if (keyToSave.startsWith('nsec') || /^[0-9a-fA-F]{64}$/.test(keyToSave)) {
+      localStorage.setItem('nostr_nsec', keyToSave);
     }
 
     setFileName(file.name)
@@ -105,16 +106,24 @@ export function EncryptionUploader({
 
       // Handle Private Key
       let privateKeyBytes: Uint8Array | undefined;
-      if (privateKeyInput) {
+      const cleanKey = privateKeyInput.trim();
+
+      if (cleanKey) {
         try {
-          if (privateKeyInput.startsWith('nsec')) {
-            const { data } = nip19.decode(privateKeyInput);
+          if (cleanKey.startsWith('nsec')) {
+            const { data } = nip19.decode(cleanKey);
             privateKeyBytes = data as Uint8Array;
+          } else if (/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
+            // Support hex strings directly
+            privateKeyBytes = new Uint8Array(
+              cleanKey.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+            );
           } else {
-            throw new Error('Please use a valid nsec string');
+            throw new Error('Please use a valid nsec or 64-char hex key');
           }
         } catch (e) {
-          throw new Error('Invalid secret key format');
+          console.error('[Amanah] Key validation error:', e);
+          throw new Error('Invalid secret key format. Please check your key.');
         }
       } else if (!window.nostr) {
         throw new Error('Signing method required (nsec or extension)');
