@@ -207,35 +207,7 @@ export function EncryptionUploader({
         className="hidden"
       />
 
-      {showPrivateKeyInput && (
-        <AnimatePresence>
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-4 p-4 rounded-xl border border-orange-500/20 bg-orange-500/10"
-          >
-            <h4 className="font-semibold flex items-center gap-2 text-orange-500 mb-2 text-sm">
-              <Key className="w-4 h-4" />
-              Sovereign Auth Setup
-            </h4>
-            <p className="text-xs text-muted-foreground mb-3">
-              To upload securely from any device, please provide your <strong>nsec</strong> (secret key). This will be used to sign your uploads locally.
-            </p>
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                placeholder="nsec1..."
-                value={privateKeyInput}
-                onChange={(e) => setPrivateKeyInput(e.target.value)}
-                className="font-mono text-xs bg-background/50 h-8"
-              />
-              <Button size="sm" variant="secondary" onClick={() => setShowPrivateKeyInput(false)} className="h-8">
-                Done
-              </Button>
-            </div>
-          </motion.div>
-        </AnimatePresence>
-      )}
+
 
       <motion.div
         onDragOver={handleDragOver}

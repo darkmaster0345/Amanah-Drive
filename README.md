@@ -365,12 +365,7 @@ npm run build
 
 MIT License - See LICENSE file for details
 
-## Support
 
-- **Docs**: https://vault.example.com/docs
-- **Issues**: https://github.com/yourusername/vault/issues
-- **Discussions**: https://github.com/yourusername/vault/discussions
-- **Twitter**: @vaultapp
 
 ## Acknowledgments
 
