@@ -197,6 +197,7 @@ export function EncryptionUploader({
     e.preventDefault()
     setIsDragOver(false)
 
+    const file = e.dataTransfer.files[0]
     if (file) {
       await handleUpload(file)
     }
