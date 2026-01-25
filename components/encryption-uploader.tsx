@@ -62,14 +62,6 @@ export function EncryptionUploader({
   }, [onDragStateChange])
 
   const handleUpload = async (file: File) => {
-    // Auth Check: Standard NIP-07 fallback
-    if (!window.nostr) {
-      toast.error('NIP-07 Extension Missing', {
-        description: 'Please install a Nostr extension (Alby, nos2x) to sign uploads.'
-      });
-      return;
-    }
-
     setFileName(file.name)
     setError(null)
     setStage('scanning')
@@ -89,15 +81,21 @@ export function EncryptionUploader({
       const fileHash = await hashString(file.name + file.size + Date.now())
       const encryptionKeyHash = await hashString(fileHash)
 
-      // Handle Signing (NIP-07 only)
+      // Handle Signing (NIP-07 or Automatic Derivation)
+      let privateKeyBytes: Uint8Array | undefined;
+
       if (!window.nostr) {
-        throw new Error('Signing method required (NIP-07 extension)');
+        console.log('[Amanah] No extension found. Using automatic vault identity for signing.');
+        // For PWAs/Mobile: Derive a unique signing key from the password itself
+        // We hash the password to get a stable 32-byte private key
+        const privateKeyHex = await hashString(password + ':signing-v1');
+        privateKeyBytes = new Uint8Array(
+          privateKeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+        );
       }
 
       // 3. Upload (handling chunking & encryption internally)
-      setStage('encrypting') // Quickly transition to uploading, but show encrypting for a bit?
-      // Actually 'uploadChunkedFile' does encryption on the fly.
-      // We'll show 'encrypting' briefly then 'uploading'.
+      setStage('encrypting')
       await new Promise(r => setTimeout(r, 500))
       setStage('uploading')
 
@@ -108,7 +106,7 @@ export function EncryptionUploader({
         file.name,
         `file-${Date.now()}`,
         key,
-        undefined, // No private key bytes, use extension
+        privateKeyBytes,
         (chunkIndex, totalChunks) => {
           const percent = Math.floor((chunkIndex / totalChunks) * 100)
           setProgress(percent)
