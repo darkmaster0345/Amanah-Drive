@@ -90,7 +90,7 @@ export class BlossomClient {
     encryptionKeyHash: string
   ): Promise<UploadResponse> {
     const formData = new FormData();
-    const blob = new Blob([encryptedData], { type: 'application/octet-stream' });
+    const blob = new Blob([encryptedData as any], { type: 'application/octet-stream' });
     formData.append('file', blob, fileName);
     formData.append('encryption_key_hash', encryptionKeyHash);
 
@@ -229,7 +229,7 @@ export class BlossomClient {
    * Calculate SHA-256 hash of data for verification
    */
   async hashData(data: Uint8Array): Promise<string> {
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data as any);
     return Array.from(new Uint8Array(hashBuffer))
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
@@ -283,7 +283,7 @@ export class BlossomClient {
         const formData = new FormData();
         // File must be the LAST field for some servers, but standard says order shouldn't matter.
         // NIP-96 says 'file' field.
-        const blob = new Blob([encryptedChunk], { type: 'application/octet-stream' });
+        const blob = new Blob([encryptedChunk as any], { type: 'application/octet-stream' });
         formData.append('file', blob, 'blob'); // Filename 'blob' is common for chunks
 
         // 5. Upload

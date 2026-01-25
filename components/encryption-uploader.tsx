@@ -46,12 +46,22 @@ export function EncryptionUploader({
   const [privateKeyInput, setPrivateKeyInput] = useState('')
   const [showPrivateKeyInput, setShowPrivateKeyInput] = useState(false)
 
-  // Check for extension on mount
+  // Check for extension or saved key on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // Check for saved nsec
+      const savedKey = localStorage.getItem('nostr_nsec');
+      if (savedKey) {
+        setPrivateKeyInput(savedKey);
+      }
+
       setTimeout(() => {
         if (!window.nostr) {
           setMissingExtension(true);
+          // If no saved key and no extension, show prompt
+          if (!savedKey) {
+            setShowPrivateKeyInput(true);
+          }
         }
       }, 1000);
     }
@@ -73,10 +83,15 @@ export function EncryptionUploader({
     // Auth Check
     if (missingExtension && !privateKeyInput) {
       setShowPrivateKeyInput(true);
-      toast.error('NIP-07 Extension missing', {
-        description: 'Please enter your nsec (Nostr Secret Key) to sign the upload.'
+      toast.error('Auth Required', {
+        description: 'Please enter your nsec to sign the upload.'
       });
       return;
+    }
+
+    // Save key if provided
+    if (privateKeyInput.startsWith('nsec')) {
+      localStorage.setItem('nostr_nsec', privateKeyInput);
     }
 
     setFileName(file.name)

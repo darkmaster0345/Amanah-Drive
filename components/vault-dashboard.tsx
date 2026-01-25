@@ -103,6 +103,24 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
     }
   }
 
+  const handleDeleteVault = async (vaultId: string) => {
+    try {
+      await indexedStorage.deleteVaultWithFiles(vaultId)
+      const updatedVaults = vaults.filter(v => v.id !== vaultId)
+      setVaults(updatedVaults)
+
+      if (updatedVaults.length > 0) {
+        setSelectedVault(updatedVaults[0])
+      } else {
+        setSelectedVault(null)
+      }
+
+      toast.success('Vault deleted')
+    } catch (error) {
+      toast.error('Failed to delete vault')
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -130,6 +148,7 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
       onFileUpload={handleFileUploaded}
       onSelectFile={setSelectedFile}
       onDeleteFile={handleDeleteFile}
+      onDeleteVault={handleDeleteVault}
       onCreateVault={handleCreateVault}
       onLogout={onLogout}
     />

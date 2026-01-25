@@ -227,6 +227,27 @@ class IndexedStorage {
   }
 
   /**
+   * Delete vault and all its files
+   */
+  async deleteVaultWithFiles(vaultId: string): Promise<void> {
+    await this.init();
+    const files = await this.getVaultFiles(vaultId);
+
+    // Delete all files first
+    await Promise.all(files.map(file => this.deleteFile(file.id)));
+
+    // Delete vault record
+    const tx = this.db!.transaction(['vaults'], 'readwrite');
+    const store = tx.objectStore('vaults');
+
+    return new Promise((resolve, reject) => {
+      const request = store.delete(vaultId);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
    * Get all vaults
    */
   async getVaults(): Promise<Vault[]> {

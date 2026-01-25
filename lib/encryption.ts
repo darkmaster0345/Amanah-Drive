@@ -25,7 +25,7 @@ export async function encryptChunkWithFreshIV(
   const encryptedData = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: iv },
     key,
-    chunkData as BufferSource
+    chunkData as any
   );
 
   // Prepend IV to ciphertext: [12-byte IV][ciphertext]
@@ -52,7 +52,7 @@ export async function decryptChunkWithPrependedIV(
   const decryptedData = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: iv },
     key,
-    ciphertext
+    ciphertext as any
   );
 
   return new Uint8Array(decryptedData);
@@ -83,7 +83,7 @@ export async function deriveKeyFromPassword(
   const key = await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt,
+      salt: salt as any,
       iterations: 100000,
       hash: 'SHA-256',
     },
@@ -119,9 +119,9 @@ export async function encryptData(
   }
 
   const encryptedData = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: iv },
+    { name: 'AES-GCM', iv: iv as any },
     key,
-    dataBuffer
+    dataBuffer as any
   );
 
   return {

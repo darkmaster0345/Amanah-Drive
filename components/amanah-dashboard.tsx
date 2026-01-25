@@ -20,6 +20,7 @@ interface AmanahDashboardProps {
   onFileUpload: (file: FileMetadata) => void
   onSelectFile: (file: FileMetadata | null) => void
   onDeleteFile: (fileId: string) => void
+  onDeleteVault: (vaultId: string) => void
   onCreateVault: () => void
   onLogout: () => void
 }
@@ -40,6 +41,7 @@ export function AmanahDashboard({
   onFileUpload,
   onSelectFile,
   onDeleteFile,
+  onDeleteVault,
   onCreateVault,
   onLogout,
 }: AmanahDashboardProps) {
@@ -50,8 +52,8 @@ export function AmanahDashboard({
   const [privacyMode, setPrivacyMode] = useState(false)
 
   const maskedPubkey = `npub1...${publicKey.substring(publicKey.length - 4)}`
-  
-  const filteredFiles = files.filter(file => 
+
+  const filteredFiles = files.filter(file =>
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
@@ -75,7 +77,7 @@ export function AmanahDashboard({
 
   return (
     <TooltipProvider>
-      <motion.div 
+      <motion.div
         className="h-screen flex bg-background overflow-hidden"
         animate={{ scale: isDragActive ? 0.98 : 1 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
@@ -250,37 +252,51 @@ export function AmanahDashboard({
 
                 <div className="space-y-2">
                   {vaults.map((vault) => (
-                    <motion.button
-                      key={vault.id}
-                      onClick={() => onSelectVault(vault)}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className={cn(
-                        'w-full p-4 rounded-xl glass-card text-left transition-all duration-200',
-                        selectedVault?.id === vault.id
-                          ? 'border-primary/50 gold-glow'
-                          : 'hover:border-border/80'
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          'w-10 h-10 rounded-lg flex items-center justify-center',
-                          selectedVault?.id === vault.id ? 'bg-primary/20' : 'bg-secondary'
-                        )}>
-                          <Vault className={cn(
-                            'w-5 h-5',
-                            selectedVault?.id === vault.id ? 'text-primary' : 'text-muted-foreground'
-                          )} />
+                    <div key={vault.id} className="relative group">
+                      <motion.button
+                        onClick={() => onSelectVault(vault)}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={cn(
+                          'w-full p-4 rounded-xl glass-card text-left transition-all duration-200 pr-12',
+                          selectedVault?.id === vault.id
+                            ? 'border-primary/50 gold-glow'
+                            : 'hover:border-border/80'
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            'w-10 h-10 rounded-lg flex items-center justify-center',
+                            selectedVault?.id === vault.id ? 'bg-primary/20' : 'bg-secondary'
+                          )}>
+                            <Vault className={cn(
+                              'w-5 h-5',
+                              selectedVault?.id === vault.id ? 'text-primary' : 'text-muted-foreground'
+                            )} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground truncate">{vault.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {files.filter(f => f.vaultId === vault.id).length} files
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-foreground truncate">{vault.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {files.filter(f => f.vaultId === vault.id).length} files
-                          </p>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                    </motion.button>
+                      </motion.button>
+
+                      {/* Delete Vault Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm('Delete this vault and all its files? This action cannot be undone.')) {
+                            onDeleteVault(vault.id);
+                          }
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Delete Vault"
+                      >
+                        <LogOut className="w-4 h-4 rotate-180" /> {/* Using LogOut rotated as a delete/exit icon or use Trash if imported */}
+                      </button>
+                    </div>
                   ))}
                 </div>
 
