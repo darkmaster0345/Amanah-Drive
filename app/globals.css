@@ -282,4 +282,22 @@
   .relay-breathing {
     animation: relay-breathing 3s cubic-bezier(0.4, 0.0, 0.6, 1.0) infinite;
   }
+
+  /* Frosted glass overlay for stealth mode - performant alternative to blur */
+  .stealth-overlay {
+    position: relative;
+    display: inline-block;
+  }
+
+  .stealth-overlay::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    pointer-events: none;
+    will-change: opacity;
+    backface-visibility: hidden;
+  }
 }

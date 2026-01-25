@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { EncryptionUploader } from '@/components/encryption-uploader'
+import { FileCard } from '@/components/file-card'
 import { cn } from '@/lib/utils'
 import type { FileMetadata, Vault as VaultType } from '@/lib/indexed-storage'
 
@@ -47,7 +48,6 @@ export function AmanahDashboard({
   const [activeNav, setActiveNav] = useState<'vault' | 'shared' | 'relays' | 'settings'>('vault')
   const [searchQuery, setSearchQuery] = useState('')
   const [isDragActive, setIsDragActive] = useState(false)
-  const [privacyMode, setPrivacyMode] = useState(false)
 
   const maskedPubkey = `npub1...${publicKey.substring(publicKey.length - 4)}`
   
@@ -78,7 +78,11 @@ export function AmanahDashboard({
       <motion.div 
         className="h-screen flex bg-background overflow-hidden"
         animate={{ scale: isDragActive ? 0.98 : 1 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30, duration: 0.2 }}
+        style={{ 
+          willChange: isDragActive ? 'transform' : 'auto',
+          backfaceVisibility: 'hidden',
+        }}
       >
         {/* Left Sidebar - Slim Navigation */}
         <aside className="w-16 md:w-20 flex flex-col items-center py-6 bg-sidebar border-r border-sidebar-border">
@@ -310,45 +314,18 @@ export function AmanahDashboard({
                         </p>
                       </div>
                     ) : (
-                      filteredFiles.map((file, index) => {
-                        const FileIcon = getFileIcon(file.mimeType)
-                        return (
-                          <motion.div
-                            key={file.id}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -20 }}
-                            transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 30 }}
-                            onClick={() => onSelectFile(file)}
-                            className="p-4 rounded-xl glass-card cursor-pointer hover:border-primary/30 transition-all file-card group"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                                <FileIcon className="w-5 h-5 text-muted-foreground" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className={cn(
-                                  'font-medium text-foreground truncate transition-all',
-                                  stealthMode && 'blur-sm'
-                                )}>
-                                  {file.name}
-                                </p>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <span>{formatFileSize(file.size)}</span>
-                                  <span className="text-border">|</span>
-                                  <span className="flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-                                    Encrypted
-                                  </span>
-                                </div>
-                              </div>
-                              <Badge variant="outline" className="text-xs border-accent/30 text-accent">
-                                {file.totalChunks} shards
-                              </Badge>
-                            </div>
-                          </motion.div>
-                        )
-                      })
+                      filteredFiles.map((file, index) => (
+                        <FileCard
+                          key={file.id}
+                          file={file}
+                          index={index}
+                          stealthMode={stealthMode}
+                          onSelectFile={onSelectFile}
+                          onDeleteFile={onDeleteFile}
+                          getFileIcon={getFileIcon}
+                          formatFileSize={formatFileSize}
+                        />
+                      ))
                     )}
                   </AnimatePresence>
                 </div>

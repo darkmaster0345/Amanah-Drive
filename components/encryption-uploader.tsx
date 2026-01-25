@@ -32,17 +32,30 @@ export function EncryptionUploader({
   const [fileName, setFileName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    setIsDragOver(true)
-    onDragStateChange?.(true)
-  }, [onDragStateChange])
+    
+    // Debounce drag events - only update state once per animation frame
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current)
+    }
+    
+    if (!isDragOver) {
+      setIsDragOver(true)
+      onDragStateChange?.(true)
+    }
+  }, [isDragOver, onDragStateChange])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    setIsDragOver(false)
-    onDragStateChange?.(false)
+    
+    // Debounce with requestAnimationFrame for smooth performance
+    dragTimeoutRef.current = setTimeout(() => {
+      setIsDragOver(false)
+      onDragStateChange?.(false)
+    }, 50)
   }, [onDragStateChange])
 
   const simulateUpload = async (file: File) => {
@@ -149,6 +162,10 @@ export function EncryptionUploader({
           isDragOver ? 'border-primary bg-primary/5 gold-glow' : 'border-border/50 hover:border-primary/30',
           stage !== 'idle' && 'cursor-default pointer-events-none'
         )}
+        style={{
+          willChange: isDragOver ? 'border-color, background-color' : 'auto',
+          backfaceVisibility: 'hidden',
+        }}
       >
         {/* Background Pulse Animation */}
         <AnimatePresence>
@@ -176,7 +193,7 @@ export function EncryptionUploader({
 
         <div className="p-8 flex flex-col items-center justify-center min-h-[200px]">
           {/* Icon with Animations */}
-          <div className="relative mb-4">
+          <div className="relative mb-4" style={{ backfaceVisibility: 'hidden' }}>
             <AnimatePresence mode="wait">
               {stage === 'idle' && (
                 <motion.div
@@ -185,6 +202,7 @@ export function EncryptionUploader({
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0.8, opacity: 0 }}
                   className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center"
+                  style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
                 >
                   <Upload className="w-8 h-8 text-muted-foreground" />
                 </motion.div>
@@ -197,6 +215,7 @@ export function EncryptionUploader({
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0.8, opacity: 0 }}
                   className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center"
+                  style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
                 >
                   <Shield className="w-8 h-8 text-primary animate-pulse" />
                 </motion.div>
@@ -208,8 +227,9 @@ export function EncryptionUploader({
                   initial={{ scale: 1, opacity: 1 }}
                   animate={{ scale: 1, opacity: 1 }}
                   className="relative w-16 h-16"
+                  style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
                 >
-                  {/* Shard Animation - 4 pieces splitting */}
+                  {/* Shard Animation - 4 pieces splitting using layout animation */}
                   {[
                     { tx: '-20px', ty: '-20px', delay: 0 },
                     { tx: '20px', ty: '-20px', delay: 0.1 },
@@ -218,6 +238,7 @@ export function EncryptionUploader({
                   ].map((shard, i) => (
                     <motion.div
                       key={i}
+                      layout
                       initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
                       animate={{
                         x: Number.parseInt(shard.tx),
@@ -225,12 +246,20 @@ export function EncryptionUploader({
                         opacity: 0.6,
                         scale: 0.4,
                       }}
-                      transition={{ delay: shard.delay, duration: 0.5 }}
+                      transition={{ 
+                        delay: shard.delay, 
+                        duration: 0.5,
+                        type: 'spring',
+                        stiffness: 200,
+                        damping: 20,
+                      }}
                       className="absolute inset-0 w-8 h-8 rounded-lg bg-accent/30 border border-accent/50 flex items-center justify-center"
                       style={{
                         left: '50%',
                         top: '50%',
                         transform: 'translate(-50%, -50%)',
+                        willChange: 'transform',
+                        backfaceVisibility: 'hidden',
                       }}
                     >
                       <Lock className="w-3 h-3 text-accent" />
@@ -246,6 +275,7 @@ export function EncryptionUploader({
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0.8, opacity: 0 }}
                   className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center cyan-glow"
+                  style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
                 >
                   <Loader2 className="w-8 h-8 text-accent animate-spin" />
                 </motion.div>
@@ -258,6 +288,7 @@ export function EncryptionUploader({
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0.8, opacity: 0 }}
                   className="w-16 h-16 rounded-2xl bg-accent/20 flex items-center justify-center cyan-glow"
+                  style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
                 >
                   <Check className="w-8 h-8 text-accent" />
                 </motion.div>
@@ -270,6 +301,7 @@ export function EncryptionUploader({
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0.8, opacity: 0 }}
                   className="w-16 h-16 rounded-2xl bg-destructive/10 flex items-center justify-center"
+                  style={{ willChange: 'transform', backfaceVisibility: 'hidden' }}
                 >
                   <X className="w-8 h-8 text-destructive" />
                 </motion.div>
