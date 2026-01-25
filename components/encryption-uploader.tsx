@@ -42,20 +42,11 @@ export function EncryptionUploader({
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Auth state
-  const [privateKeyInput, setPrivateKeyInput] = useState('')
-  const [showPrivateKeyInput, setShowPrivateKeyInput] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
 
-  // Check for saved key on mount
+  // Check for extension on mount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedKey = localStorage.getItem('nostr_nsec');
-      if (savedKey) {
-        setPrivateKeyInput(savedKey);
-      } else if (!window.nostr) {
-        // Only show prompt if both nsec and extension are missing
-        setShowPrivateKeyInput(true);
-      }
-    }
+    // No-op for now unless we need specific extension detection logic here
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -71,25 +62,19 @@ export function EncryptionUploader({
   }, [onDragStateChange])
 
   const handleUpload = async (file: File) => {
-    // Auth Check: We need either a stored key OR a browser extension
-    if (!privateKeyInput && !window.nostr) {
-      setShowPrivateKeyInput(true);
-      toast.error('Authentication Required', {
-        description: 'Please set up your signing key to upload.'
+    // Auth Check: Standard NIP-07 fallback
+    if (!window.nostr) {
+      toast.error('NIP-07 Extension Missing', {
+        description: 'Please install a Nostr extension (Alby, nos2x) to sign uploads.'
       });
       return;
-    }
-
-    // Save key if provided
-    const keyToSave = privateKeyInput.trim();
-    if (keyToSave.startsWith('nsec') || /^[0-9a-fA-F]{64}$/.test(keyToSave)) {
-      localStorage.setItem('nostr_nsec', keyToSave);
     }
 
     setFileName(file.name)
     setError(null)
     setStage('scanning')
     setProgress(0)
+    setIsUploading(true)
 
     try {
       // 1. Read File
@@ -104,38 +89,9 @@ export function EncryptionUploader({
       const fileHash = await hashString(file.name + file.size + Date.now())
       const encryptionKeyHash = await hashString(fileHash)
 
-      // Handle Private Key
-      let privateKeyBytes: Uint8Array | undefined;
-      const cleanKey = privateKeyInput.trim();
-
-      if (cleanKey) {
-        try {
-          if (cleanKey.startsWith('nsec')) {
-            const { data, type } = nip19.decode(cleanKey);
-            if (type !== 'nsec') throw new Error(`Expected nsec, got ${type}`);
-            privateKeyBytes = data as Uint8Array;
-          } else if (cleanKey.startsWith('npub')) {
-            throw new Error('You provided a public key (npub), but a SECRET key (nsec) is required for signing uploads.');
-          } else {
-            // Handle hex (strip 0x if present)
-            const hexKey = cleanKey.replace(/^0x/, '');
-            if (/^[0-9a-fA-F]{64}$/.test(hexKey)) {
-              privateKeyBytes = new Uint8Array(
-                hexKey.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
-              );
-            } else {
-              console.log('[Amanah] Key rejected. Length:', cleanKey.length, 'Prefix:', cleanKey.substring(0, 4));
-              throw new Error('Please use a valid nsec (starts with nsec1...) or a 64-character hex key.');
-            }
-          }
-        } catch (e) {
-          const errMsg = e instanceof Error ? e.message : 'Invalid secret key format';
-          console.error('[Amanah] Key validation error:', e);
-          toast.error('Key Error', { description: errMsg });
-          throw new Error(errMsg);
-        }
-      } else if (!window.nostr) {
-        throw new Error('Signing method required (nsec or extension)');
+      // Handle Signing (NIP-07 only)
+      if (!window.nostr) {
+        throw new Error('Signing method required (NIP-07 extension)');
       }
 
       // 3. Upload (handling chunking & encryption internally)
@@ -152,7 +108,7 @@ export function EncryptionUploader({
         file.name,
         `file-${Date.now()}`,
         key,
-        privateKeyBytes,
+        undefined, // No private key bytes, use extension
         (chunkIndex, totalChunks) => {
           const percent = Math.floor((chunkIndex / totalChunks) * 100)
           setProgress(percent)
@@ -197,6 +153,7 @@ export function EncryptionUploader({
       }
 
       // Reset
+      setIsUploading(false)
       setTimeout(() => {
         setStage('idle')
         setProgress(0)
@@ -205,6 +162,7 @@ export function EncryptionUploader({
 
     } catch (err) {
       console.error(err)
+      setIsUploading(false)
       setStage('error')
       setError(err instanceof Error ? err.message : 'Upload failed')
       toast.error('Upload failed')
@@ -219,7 +177,7 @@ export function EncryptionUploader({
     if (file) {
       await handleUpload(file)
     }
-  }, [vaultId, publicKey, onFileUpload, privateKeyInput])
+  }, [vaultId, publicKey, onFileUpload])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
