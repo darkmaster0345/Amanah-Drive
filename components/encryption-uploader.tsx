@@ -41,29 +41,20 @@ export function EncryptionUploader({
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Auth Fallback State
-  const [missingExtension, setMissingExtension] = useState(false)
+  // Auth state
   const [privateKeyInput, setPrivateKeyInput] = useState('')
   const [showPrivateKeyInput, setShowPrivateKeyInput] = useState(false)
 
-  // Check for extension or saved key on mount
+  // Check for saved key on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Check for saved nsec
       const savedKey = localStorage.getItem('nostr_nsec');
       if (savedKey) {
         setPrivateKeyInput(savedKey);
+      } else if (!window.nostr) {
+        // Only show prompt if both nsec and extension are missing
+        setShowPrivateKeyInput(true);
       }
-
-      setTimeout(() => {
-        if (!window.nostr) {
-          setMissingExtension(true);
-          // If no saved key and no extension, show prompt
-          if (!savedKey) {
-            setShowPrivateKeyInput(true);
-          }
-        }
-      }, 1000);
     }
   }, []);
 
@@ -80,11 +71,11 @@ export function EncryptionUploader({
   }, [onDragStateChange])
 
   const handleUpload = async (file: File) => {
-    // Auth Check
-    if (missingExtension && !privateKeyInput) {
+    // Auth Check: We need either a stored key OR a browser extension
+    if (!privateKeyInput && !window.nostr) {
       setShowPrivateKeyInput(true);
-      toast.error('Auth Required', {
-        description: 'Please enter your nsec to sign the upload.'
+      toast.error('Authentication Required', {
+        description: 'Please set up your signing key to upload.'
       });
       return;
     }
@@ -112,9 +103,9 @@ export function EncryptionUploader({
       const fileHash = await hashString(file.name + file.size + Date.now())
       const encryptionKeyHash = await hashString(fileHash)
 
-      // Handle Private Key for Fallback
+      // Handle Private Key
       let privateKeyBytes: Uint8Array | undefined;
-      if (missingExtension && privateKeyInput) {
+      if (privateKeyInput) {
         try {
           if (privateKeyInput.startsWith('nsec')) {
             const { data } = nip19.decode(privateKeyInput);
@@ -123,10 +114,10 @@ export function EncryptionUploader({
             throw new Error('Please use a valid nsec string');
           }
         } catch (e) {
-          throw new Error('Invalid private key format');
+          throw new Error('Invalid secret key format');
         }
       } else if (!window.nostr) {
-        throw new Error('NIP-07 extension required');
+        throw new Error('Signing method required (nsec or extension)');
       }
 
       // 3. Upload (handling chunking & encryption internally)
@@ -206,11 +197,10 @@ export function EncryptionUploader({
     e.preventDefault()
     setIsDragOver(false)
 
-    const file = e.dataTransfer.files[0]
     if (file) {
       await handleUpload(file)
     }
-  }, [vaultId, publicKey, onFileUpload, missingExtension, privateKeyInput])
+  }, [vaultId, publicKey, onFileUpload, privateKeyInput])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -249,10 +239,10 @@ export function EncryptionUploader({
           >
             <h4 className="font-semibold flex items-center gap-2 text-orange-500 mb-2 text-sm">
               <Key className="w-4 h-4" />
-              Auth Configuration
+              Sovereign Auth Setup
             </h4>
             <p className="text-xs text-muted-foreground mb-3">
-              No NIP-07 browser extension detected. Please provide your <strong>nsec</strong> key.
+              To upload securely from any device, please provide your <strong>nsec</strong> (secret key). This will be used to sign your uploads locally.
             </p>
             <div className="flex gap-2">
               <Input
