@@ -11,6 +11,54 @@ export interface EncryptedData {
 }
 
 /**
+ * Encrypt a chunk with a fresh IV prepended to the ciphertext
+ * Format: [12-byte IV][ciphertext with auth tag]
+ * Each chunk MUST use a unique IV for AES-GCM security
+ */
+export async function encryptChunkWithFreshIV(
+  chunkData: Uint8Array,
+  key: CryptoKey
+): Promise<Uint8Array> {
+  // Generate fresh 12-byte IV for this chunk
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+
+  const encryptedData = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv },
+    key,
+    chunkData as BufferSource
+  );
+
+  // Prepend IV to ciphertext: [12-byte IV][ciphertext]
+  const result = new Uint8Array(12 + encryptedData.byteLength);
+  result.set(iv, 0);
+  result.set(new Uint8Array(encryptedData), 12);
+
+  return result;
+}
+
+/**
+ * Decrypt a chunk that has IV prepended
+ * Expects format: [12-byte IV][ciphertext with auth tag]
+ */
+export async function decryptChunkWithPrependedIV(
+  encryptedChunk: Uint8Array,
+  key: CryptoKey
+): Promise<Uint8Array> {
+  // Extract IV (first 12 bytes)
+  const iv = encryptedChunk.slice(0, 12);
+  // Extract ciphertext (rest of data)
+  const ciphertext = encryptedChunk.slice(12);
+
+  const decryptedData = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: iv },
+    key,
+    ciphertext
+  );
+
+  return new Uint8Array(decryptedData);
+}
+
+/**
  * Derive a key from a password using PBKDF2
  */
 export async function deriveKeyFromPassword(
@@ -58,7 +106,7 @@ export async function encryptData(
   iv?: Uint8Array
 ): Promise<EncryptedData> {
   let dataBuffer: Uint8Array;
-  
+
   if (typeof data === 'string') {
     const encoder = new TextEncoder();
     dataBuffer = encoder.encode(data);

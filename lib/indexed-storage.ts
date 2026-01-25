@@ -15,6 +15,7 @@ export interface FileMetadata {
   encryptionKeyHash: string;
   chunkHashes: string[];
   blossomUrls: string[];
+  totalChunks?: number;
 }
 
 export interface FileChunk {

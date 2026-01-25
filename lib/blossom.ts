@@ -5,8 +5,9 @@
  * Implements NIP-96 POST method for reliable uploads
  */
 
-import { createNIP98Event, generateNIP98Header } from '@/lib/nip-98-auth';
+import { createAuthHeader } from '@/lib/nip-98-auth';
 import { createBUD02Event, generateAuthHeader } from '@/lib/bud-02-auth'; // Import createBUD02Event and generateAuthHeader
+import { encryptChunkWithFreshIV, decryptChunkWithPrependedIV } from '@/lib/encryption';
 
 export interface BlossomServerInfo {
   url: string;
@@ -235,109 +236,95 @@ export class BlossomClient {
   }
 
   async uploadChunkedFile(
-    encryptedData: Uint8Array,
+    fileData: Uint8Array,
     fileName: string,
     fileId: string,
+    encryptionKey: CryptoKey,
+    privateKey?: Uint8Array,
     onChunkProgress?: (chunkIndex: number, totalChunks: number) => void
   ): Promise<MultiChunkUploadResult> {
-    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
-    const totalChunks = Math.ceil(encryptedData.length / CHUNK_SIZE);
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks (Standard for most servers)
+    const totalChunks = Math.ceil(fileData.length / CHUNK_SIZE);
     const chunks: ChunkUploadResponse[] = [];
 
-    // NIP-96 compatible servers (POST FormData method)
-    const UPLOAD_SERVERS = [
-      'https://nostr.build/api/v2/upload/blossom', // Primary: NIP-96 compatible
-      'https://void.cat/upload', // Fallback: more relaxed CORS
-    ];
+    // CRITICAL: We strictly target the requested endpoint
+    const UPLOAD_SERVER = 'https://nostr.build/api/v2/upload/blossom';
+
+    // Validate public key early
+    if (!this.publicKey) {
+      throw new Error('Public key required for NIP-98 authorization. Please login with Nostr.');
+    }
 
     try {
       for (let i = 0; i < totalChunks; i++) {
         const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, encryptedData.length);
-        const chunkData = encryptedData.slice(start, end);
+        const end = Math.min(start + CHUNK_SIZE, fileData.length);
+        const chunkPlaintext = fileData.slice(start, end);
 
-        // Compute SHA-256 hash of the chunk
-        const chunkHash = await this.hashData(chunkData);
+        // 1. Encrypt chunk with FRESH IV (prepended to result)
+        // Format: [12-byte IV][ciphertext]
+        const encryptedChunk = await encryptChunkWithFreshIV(chunkPlaintext, encryptionKey);
 
-        // Validate public key
-        if (!this.publicKey) {
-          throw new Error('Public key required for NIP-98 authorization');
-        }
+        // 2. Compute hash of the ENCRYPTED content (this is what the server identifies)
+        const chunkHash = await this.hashData(encryptedChunk);
 
         console.log('[v0] Uploading chunk:', {
           chunkIndex: i,
           totalChunks,
           hash: chunkHash.substring(0, 8) + '...',
-          size: chunkData.byteLength,
+          size: encryptedChunk.byteLength,
         });
 
-        let uploadSuccess = false;
-        let uploadError: Error | null = null;
+        // 3. Generate NIP-98 Auth Header (with NIP-07 signing OR private key fallback)
+        // CRITICAL: The URL in the 'u' tag must match the endpoint EXACTLY
+        const authHeader = await createAuthHeader(this.publicKey, UPLOAD_SERVER, 'POST', privateKey);
 
-        // Try each server
-        for (const serverUrl of UPLOAD_SERVERS) {
-          try {
-            console.log('[v0] Attempting upload to:', serverUrl);
+        // 4. Prepare FormData
+        const formData = new FormData();
+        // File must be the LAST field for some servers, but standard says order shouldn't matter.
+        // NIP-96 says 'file' field.
+        const blob = new Blob([encryptedChunk], { type: 'application/octet-stream' });
+        formData.append('file', blob, 'blob'); // Filename 'blob' is common for chunks
 
-            // Create NIP-98 event for this request
-            const nip98Event = createNIP98Event(this.publicKey, serverUrl, 'POST');
-            const authHeader = generateNIP98Header(nip98Event);
+        // 5. Upload
+        try {
+          const response = await fetch(UPLOAD_SERVER, {
+            method: 'POST',
+            headers: {
+              'Authorization': authHeader,
+            },
+            body: formData,
+          });
 
-            // Build FormData with encrypted chunk
-            const formData = new FormData();
-            const blob = new Blob([chunkData], { type: 'application/octet-stream' });
-            formData.append('file', blob, 'blob');
-
-            const response = await fetch(serverUrl, {
-              method: 'POST',
-              headers: {
-                'Authorization': authHeader,
-              },
-              body: formData,
-              mode: 'cors',
-              credentials: 'omit',
-            });
-
-            if (response.status >= 200 && response.status < 300) {
-              // Success
-              console.log('[v0] Chunk uploaded successfully:', {
-                server: serverUrl,
-                status: response.status,
-                hash: chunkHash.substring(0, 8) + '...',
-              });
-
-              chunks.push({
-                chunkIndex: i,
-                hash: chunkHash,
-                size: chunkData.byteLength,
-                url: `${serverUrl}/${chunkHash}`,
-              });
-
-              onChunkProgress?.(i + 1, totalChunks);
-              uploadSuccess = true;
-              break;
-            } else {
-              // Log error details
-              const errorText = await response.text();
-              console.warn('[v0] Upload failed for', serverUrl, ':', {
-                status: response.status,
-                statusText: response.statusText,
-                errorDetails: errorText.substring(0, 200),
-              });
-              uploadError = new Error(
-                `${serverUrl}: ${response.status} ${response.statusText}`
-              );
-            }
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            console.warn('[v0] Upload error for', serverUrl, ':', errorMsg);
-            uploadError = error instanceof Error ? error : new Error(errorMsg);
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText.substring(0, 100)}`);
           }
-        }
 
-        if (!uploadSuccess) {
-          console.error('[v0] Upload failed on all servers:', uploadError?.message);
-          throw uploadError || new Error('Upload failed on all servers');
+          const responseData = await response.json();
+
+          console.log('[v0] Chunk uploaded successfully:', {
+            server: UPLOAD_SERVER,
+            status: response.status,
+            hash: chunkHash.substring(0, 8) + '...',
+          });
+
+          // Store successful chunk info
+          chunks.push({
+            chunkIndex: i,
+            hash: chunkHash,
+            size: encryptedChunk.byteLength,
+            url: responseData.url || `${UPLOAD_SERVER}/${chunkHash}`,
+          });
+
+          onChunkProgress?.(i + 1, totalChunks);
+
+          // Small yield to keep UI responsive
+          await new Promise(r => setTimeout(r, 0));
+
+        } catch (error) {
+          console.error('[v0] Chunk upload error:', error);
+          throw error;
         }
       }
 
@@ -345,7 +332,7 @@ export class BlossomClient {
         fileId,
         totalChunks,
         chunks,
-        totalSize: encryptedData.length,
+        totalSize: fileData.length,
       };
     } catch (error) {
       console.error('[v0] Chunked upload failed:', error);
@@ -358,21 +345,27 @@ export class BlossomClient {
    */
   async downloadChunkedFile(
     chunkUrls: string[],
+    encryptionKey: CryptoKey,
     onChunkDownload?: (chunkIndex: number, totalChunks: number) => void
   ): Promise<Uint8Array> {
     try {
       const chunks: Uint8Array[] = [];
 
       for (let i = 0; i < chunkUrls.length; i++) {
-        const chunkData = await this.downloadBlob(chunkUrls[i]);
-        chunks.push(chunkData);
+        // 1. Download encrypted chunk
+        const encryptedChunk = await this.downloadBlob(chunkUrls[i]);
+
+        // 2. Decrypt using prepended IV
+        const decryptedChunk = await decryptChunkWithPrependedIV(encryptedChunk, encryptionKey);
+
+        chunks.push(decryptedChunk);
 
         onChunkDownload?.(i + 1, chunkUrls.length);
 
-        console.log('[v0] Chunk downloaded:', {
+        console.log('[v0] Chunk downloaded and decrypted:', {
           chunkIndex: i,
           totalChunks: chunkUrls.length,
-          size: chunkData.length,
+          size: decryptedChunk.length,
         });
       }
 

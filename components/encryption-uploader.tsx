@@ -2,12 +2,20 @@
 
 import React from "react"
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Upload, Lock, Loader2, Check, X } from 'lucide-react'
+import { Shield, Upload, Lock, Loader2, Check, X, Key } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { FileMetadata } from '@/lib/indexed-storage'
+import { ShardMap } from '@/components/shard-map'
+import { toast } from 'sonner'
+import { indexedStorage, type FileMetadata } from '@/lib/indexed-storage'
+import { hashString, deriveKeyFromPassword } from '@/lib/encryption'
+import { createBlossomClient } from '@/lib/blossom'
+import { createFileMetadataEvent } from '@/lib/nostr'
+import { nip19 } from 'nostr-tools'
 
 interface EncryptionUploaderProps {
   vaultId: string
@@ -33,6 +41,22 @@ export function EncryptionUploader({
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Auth Fallback State
+  const [missingExtension, setMissingExtension] = useState(false)
+  const [privateKeyInput, setPrivateKeyInput] = useState('')
+  const [showPrivateKeyInput, setShowPrivateKeyInput] = useState(false)
+
+  // Check for extension on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        if (!window.nostr) {
+          setMissingExtension(true);
+        }
+      }, 1000);
+    }
+  }, []);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(true)
@@ -45,76 +69,138 @@ export function EncryptionUploader({
     onDragStateChange?.(false)
   }, [onDragStateChange])
 
-  const simulateUpload = async (file: File) => {
+  const handleUpload = async (file: File) => {
+    // Auth Check
+    if (missingExtension && !privateKeyInput) {
+      setShowPrivateKeyInput(true);
+      toast.error('NIP-07 Extension missing', {
+        description: 'Please enter your nsec (Nostr Secret Key) to sign the upload.'
+      });
+      return;
+    }
+
     setFileName(file.name)
     setError(null)
-    
-    // Stage 1: Scanning
     setStage('scanning')
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    // Stage 2: Sharding
-    setStage('sharding')
-    await new Promise(resolve => setTimeout(resolve, 1200))
-    
-    // Stage 3: Encrypting
-    setStage('encrypting')
     setProgress(0)
-    for (let i = 0; i <= 100; i += 10) {
-      setProgress(i)
-      await new Promise(resolve => setTimeout(resolve, 100))
+
+    try {
+      // 1. Read File
+      const fileBuffer = await file.arrayBuffer()
+      const fileData = new Uint8Array(fileBuffer)
+
+      // 2. Derive Key & Hash (Sharding/Encrypting Prep)
+      setStage('sharding')
+      const password = localStorage.getItem('vault_nostr_pubkey') || publicKey
+      const { key } = await deriveKeyFromPassword(password)
+
+      const fileHash = await hashString(file.name + file.size + Date.now())
+      const encryptionKeyHash = await hashString(fileHash)
+
+      // Handle Private Key for Fallback
+      let privateKeyBytes: Uint8Array | undefined;
+      if (missingExtension && privateKeyInput) {
+        try {
+          if (privateKeyInput.startsWith('nsec')) {
+            const { data } = nip19.decode(privateKeyInput);
+            privateKeyBytes = data as Uint8Array;
+          } else {
+            throw new Error('Please use a valid nsec string');
+          }
+        } catch (e) {
+          throw new Error('Invalid private key format');
+        }
+      } else if (!window.nostr) {
+        throw new Error('NIP-07 extension required');
+      }
+
+      // 3. Upload (handling chunking & encryption internally)
+      setStage('encrypting') // Quickly transition to uploading, but show encrypting for a bit?
+      // Actually 'uploadChunkedFile' does encryption on the fly.
+      // We'll show 'encrypting' briefly then 'uploading'.
+      await new Promise(r => setTimeout(r, 500))
+      setStage('uploading')
+
+      const blossomClient = createBlossomClient('https://nostr.build/api/v2/upload/blossom', undefined, publicKey)
+
+      const uploadResult = await blossomClient.uploadChunkedFile(
+        fileData,
+        file.name,
+        `file-${Date.now()}`,
+        key,
+        privateKeyBytes,
+        (chunkIndex, totalChunks) => {
+          const percent = Math.floor((chunkIndex / totalChunks) * 100)
+          setProgress(percent)
+        }
+      )
+
+      // 4. Save Metadata
+      setStage('complete')
+      const fileMetadata: FileMetadata = {
+        id: uploadResult.fileId,
+        vaultId,
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        size: file.size,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        encryptionKeyHash,
+        chunkHashes: uploadResult.chunks.map((c) => c.hash),
+        blossomUrls: uploadResult.chunks.map((c) => c.url),
+        totalChunks: uploadResult.totalChunks
+      }
+
+      await indexedStorage.saveFileMetadata(fileMetadata)
+      onFileUpload(fileMetadata)
+
+      // 5. Publish to Relays (NIP-94)
+      try {
+        const nip94Event = createFileMetadataEvent(publicKey, {
+          mimeType: fileMetadata.mimeType,
+          chunkHashes: fileMetadata.chunkHashes,
+          size: fileMetadata.size,
+          encryptionKeyHash: fileMetadata.encryptionKeyHash,
+          blossomServer: 'https://nostr.build/api/v2/upload/blossom',
+          vaultId: fileMetadata.vaultId,
+          fileName: fileMetadata.name,
+          totalChunks: fileMetadata.totalChunks,
+        })
+        console.log('[Amanah] NIP-94 Event created:', nip94Event)
+        // relayManager.publish(nip94Event) // Uncomment when ready
+      } catch (e) {
+        console.warn('Failed to create NIP-94 event:', e)
+      }
+
+      // Reset
+      setTimeout(() => {
+        setStage('idle')
+        setProgress(0)
+        setFileName('')
+      }, 2000)
+
+    } catch (err) {
+      console.error(err)
+      setStage('error')
+      setError(err instanceof Error ? err.message : 'Upload failed')
+      toast.error('Upload failed')
     }
-    
-    // Stage 4: Uploading
-    setStage('uploading')
-    setProgress(0)
-    for (let i = 0; i <= 100; i += 5) {
-      setProgress(i)
-      await new Promise(resolve => setTimeout(resolve, 80))
-    }
-    
-    // Complete
-    setStage('complete')
-    
-    // Create mock file metadata
-    const mockFile: FileMetadata = {
-      id: `file-${Date.now()}`,
-      name: file.name,
-      size: file.size,
-      mimeType: file.type || 'application/octet-stream',
-      vaultId,
-      encryptionKeyHash: 'mock-hash-' + Date.now(),
-      chunkHashes: ['shard1', 'shard2', 'shard3', 'shard4'],
-      totalChunks: 4,
-      blossomServer: 'https://nostr.build',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }
-    
-    onFileUpload(mockFile)
-    
-    // Reset after delay
-    setTimeout(() => {
-      setStage('idle')
-      setProgress(0)
-      setFileName('')
-    }, 2000)
   }
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
-    
+
     const file = e.dataTransfer.files[0]
     if (file) {
-      await simulateUpload(file)
+      await handleUpload(file)
     }
-  }, [vaultId, publicKey, onFileUpload])
+  }, [vaultId, publicKey, onFileUpload, missingExtension, privateKeyInput])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      await simulateUpload(file)
+      await handleUpload(file)
     }
   }
 
@@ -138,7 +224,37 @@ export function EncryptionUploader({
         onChange={handleFileSelect}
         className="hidden"
       />
-      
+
+      {showPrivateKeyInput && (
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-4 rounded-xl border border-orange-500/20 bg-orange-500/10"
+          >
+            <h4 className="font-semibold flex items-center gap-2 text-orange-500 mb-2 text-sm">
+              <Key className="w-4 h-4" />
+              Auth Configuration
+            </h4>
+            <p className="text-xs text-muted-foreground mb-3">
+              No NIP-07 browser extension detected. Please provide your <strong>nsec</strong> key.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                placeholder="nsec1..."
+                value={privateKeyInput}
+                onChange={(e) => setPrivateKeyInput(e.target.value)}
+                className="font-mono text-xs bg-background/50 h-8"
+              />
+              <Button size="sm" variant="secondary" onClick={() => setShowPrivateKeyInput(false)} className="h-8">
+                Done
+              </Button>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+
       <motion.div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -203,52 +319,15 @@ export function EncryptionUploader({
               )}
 
               {stage === 'sharding' && (
-                <motion.div
-                  key="sharding"
-                  initial={{ scale: 1, opacity: 1 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="relative w-16 h-16"
-                >
-                  {/* Shard Animation - 4 pieces splitting */}
-                  {[
-                    { tx: '-20px', ty: '-20px', delay: 0 },
-                    { tx: '20px', ty: '-20px', delay: 0.1 },
-                    { tx: '-20px', ty: '20px', delay: 0.2 },
-                    { tx: '20px', ty: '20px', delay: 0.3 },
-                  ].map((shard, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
-                      animate={{
-                        x: Number.parseInt(shard.tx),
-                        y: Number.parseInt(shard.ty),
-                        opacity: 0.6,
-                        scale: 0.4,
-                      }}
-                      transition={{ delay: shard.delay, duration: 0.5 }}
-                      className="absolute inset-0 w-8 h-8 rounded-lg bg-accent/30 border border-accent/50 flex items-center justify-center"
-                      style={{
-                        left: '50%',
-                        top: '50%',
-                        transform: 'translate(-50%, -50%)',
-                      }}
-                    >
-                      <Lock className="w-3 h-3 text-accent" />
-                    </motion.div>
-                  ))}
-                </motion.div>
+                <div className="relative w-24 h-24 flex items-center justify-center">
+                  <ShardMap progress={30} totalShards={8} />
+                </div>
               )}
 
               {(stage === 'encrypting' || stage === 'uploading') && (
-                <motion.div
-                  key="progress"
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.8, opacity: 0 }}
-                  className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center cyan-glow"
-                >
-                  <Loader2 className="w-8 h-8 text-accent animate-spin" />
-                </motion.div>
+                <div className="relative w-24 h-24 flex items-center justify-center">
+                  <ShardMap progress={progress} totalShards={12} />
+                </div>
               )}
 
               {stage === 'complete' && (
