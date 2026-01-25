@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Vault, Share2, Radio, Settings, Eye, EyeOff, ChevronRight, Lock, Unlock, FileText, ImageIcon, Film, Music, Archive, MoreHorizontal, Plus, Search, LogOut, Upload } from 'lucide-react'
+import { Shield, Vault, Share2, Radio, Settings, Eye, EyeOff, ChevronRight, Lock, Unlock, FileText, ImageIcon, Film, Music, Archive, MoreHorizontal, Plus, Search, LogOut, Upload, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +19,7 @@ interface AmanahDashboardProps {
   onSelectVault: (vault: VaultType) => void
   onFileUpload: (file: FileMetadata) => void
   onSelectFile: (file: FileMetadata | null) => void
+  onDownloadFile: (file: FileMetadata) => void
   onDeleteFile: (fileId: string) => void
   onDeleteVault: (vaultId: string) => void
   onCreateVault: () => void
@@ -40,6 +41,7 @@ export function AmanahDashboard({
   onSelectVault,
   onFileUpload,
   onSelectFile,
+  onDownloadFile,
   onDeleteFile,
   onDeleteVault,
   onCreateVault,
@@ -357,6 +359,19 @@ export function AmanahDashboard({
                                     Encrypted
                                   </span>
                                 </div>
+                              </div>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="w-8 h-8 rounded-lg hover:bg-primary/20"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDownloadFile(file);
+                                  }}
+                                >
+                                  <Download className="w-4 h-4 text-primary" />
+                                </Button>
                               </div>
                               <Badge variant="outline" className="text-xs border-accent/30 text-accent">
                                 {file.totalChunks} shards

@@ -5,6 +5,8 @@ import { motion } from 'framer-motion'
 import { Shield } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { indexedStorage, type FileMetadata, type Vault } from '@/lib/indexed-storage'
+import { deriveKeyFromPassword } from '@/lib/encryption'
+import { createBlossomClient } from '@/lib/blossom'
 import { AmanahDashboard } from '@/components/amanah-dashboard'
 
 interface VaultDashboardProps {
@@ -121,6 +123,45 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
     }
   }
 
+  const handleDownloadFile = async (file: FileMetadata) => {
+    try {
+      toast.info(`Downloading ${file.name}...`);
+
+      // 1. Derive key
+      const password = localStorage.getItem('vault_nostr_pubkey') || publicKey;
+      const { key } = await deriveKeyFromPassword(password);
+
+      // 2. Initialize Blossom Client
+      const blossomClient = createBlossomClient('https://nostr.build/api/v2/upload/blossom', undefined, publicKey);
+
+      // 3. Download and Decrypt
+      const fileData = await blossomClient.downloadChunkedFile(
+        file.blossomUrls,
+        key,
+        (current: number, total: number) => {
+          const progress = Math.floor((current / total) * 100);
+          console.log(`[Amanah] Download progress: ${progress}%`);
+        }
+      );
+
+      // 4. Trigger browser download
+      const blob = new Blob([fileData as any], { type: file.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`${file.name} downloaded successfully`);
+    } catch (error) {
+      console.error('[Amanah] Download failed:', error);
+      toast.error('Download failed');
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -147,6 +188,7 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
       onSelectVault={setSelectedVault}
       onFileUpload={handleFileUploaded}
       onSelectFile={setSelectedFile}
+      onDownloadFile={handleDownloadFile}
       onDeleteFile={handleDeleteFile}
       onDeleteVault={handleDeleteVault}
       onCreateVault={handleCreateVault}
