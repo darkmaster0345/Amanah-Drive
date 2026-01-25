@@ -247,8 +247,8 @@ export class BlossomClient {
     const totalChunks = Math.ceil(fileData.length / CHUNK_SIZE);
     const chunks: ChunkUploadResponse[] = [];
 
-    // CRITICAL: We strictly target the requested endpoint
-    const UPLOAD_SERVER = 'https://nostr.build/api/v2/upload/blossom';
+    // CRITICAL: We strictly target the official Blossom subdomain
+    const UPLOAD_SERVER = 'https://blossom.nostr.build/upload';
 
     // Validate public key early
     if (!this.publicKey) {
@@ -277,7 +277,7 @@ export class BlossomClient {
 
         // 3. Generate NIP-98 Auth Header (with NIP-07 signing OR private key fallback)
         // CRITICAL: The URL in the 'u' tag must match the endpoint EXACTLY
-        const authHeader = await createAuthHeader(this.publicKey, UPLOAD_SERVER, 'POST', privateKey);
+        const authHeader = await createAuthHeader(this.publicKey, UPLOAD_SERVER, 'PUT', privateKey);
 
         // 4. Prepare FormData
         const formData = new FormData();
@@ -289,7 +289,7 @@ export class BlossomClient {
         // 5. Upload
         try {
           const response = await fetch(UPLOAD_SERVER, {
-            method: 'POST',
+            method: 'PUT',
             headers: {
               'Authorization': authHeader,
             },
