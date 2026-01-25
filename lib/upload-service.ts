@@ -1,15 +1,14 @@
 /**
  * Upload Service - Core business logic for encrypting and uploading files
- * Implements real AES-GCM encryption, chunking, and Blossom uploads with NIP-98 auth
+ * Implements real AES-GCM encryption, chunking, and uploads via server-side proxy
  */
 
-import { createBlossomClient, type BlossomClient } from '@/lib/blossom';
-import { hashString } from '@/lib/encryption';
 import { indexedStorage, type FileMetadata, type FileChunk } from '@/lib/indexed-storage';
+import { createBlossomClient, BLOSSOM_SERVER } from '@/lib/blossom-client'; // Import createBlossomClient and BLOSSOM_SERVER
 
 // Constants
 const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per shard
-const BLOSSOM_SERVER = 'https://nostr.build/api/v2/upload/blossom';
+const UPLOAD_API_ROUTE = '/api/upload';
 
 export type UploadStage = 'idle' | 'scanning' | 'sharding' | 'encrypting' | 'uploading' | 'complete' | 'error';
 
