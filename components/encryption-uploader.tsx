@@ -111,19 +111,28 @@ export function EncryptionUploader({
       if (cleanKey) {
         try {
           if (cleanKey.startsWith('nsec')) {
-            const { data } = nip19.decode(cleanKey);
+            const { data, type } = nip19.decode(cleanKey);
+            if (type !== 'nsec') throw new Error(`Expected nsec, got ${type}`);
             privateKeyBytes = data as Uint8Array;
-          } else if (/^[0-9a-fA-F]{64}$/.test(cleanKey)) {
-            // Support hex strings directly
-            privateKeyBytes = new Uint8Array(
-              cleanKey.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
-            );
+          } else if (cleanKey.startsWith('npub')) {
+            throw new Error('You provided a public key (npub), but a SECRET key (nsec) is required for signing uploads.');
           } else {
-            throw new Error('Please use a valid nsec or 64-char hex key');
+            // Handle hex (strip 0x if present)
+            const hexKey = cleanKey.replace(/^0x/, '');
+            if (/^[0-9a-fA-F]{64}$/.test(hexKey)) {
+              privateKeyBytes = new Uint8Array(
+                hexKey.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+              );
+            } else {
+              console.log('[Amanah] Key rejected. Length:', cleanKey.length, 'Prefix:', cleanKey.substring(0, 4));
+              throw new Error('Please use a valid nsec (starts with nsec1...) or a 64-character hex key.');
+            }
           }
         } catch (e) {
+          const errMsg = e instanceof Error ? e.message : 'Invalid secret key format';
           console.error('[Amanah] Key validation error:', e);
-          throw new Error('Invalid secret key format. Please check your key.');
+          toast.error('Key Error', { description: errMsg });
+          throw new Error(errMsg);
         }
       } else if (!window.nostr) {
         throw new Error('Signing method required (nsec or extension)');
