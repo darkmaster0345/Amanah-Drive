@@ -16,7 +16,7 @@ declare global {
 }
 
 export interface UnsignedNIP98Event {
-  kind: 27235;
+  kind: number;
   pubkey: string;
   created_at: number;
   tags: string[][];
@@ -52,10 +52,11 @@ export async function getPublicKeyFromNIP07(): Promise<string> {
 export function createUnsignedNIP98Event(
   publicKey: string,
   url: string,
-  method: string
+  method: string,
+  kind: number = 27235
 ): UnsignedNIP98Event {
   return {
-    kind: 27235,
+    kind,
     pubkey: publicKey,
     created_at: Math.floor(Date.now() / 1000),
     tags: [
@@ -107,9 +108,10 @@ export async function createAuthHeader(
   publicKey: string,
   url: string,
   method: string,
-  privateKey?: Uint8Array
+  privateKey?: Uint8Array,
+  kind: number = 27235
 ): Promise<string> {
-  const unsignedEvent = createUnsignedNIP98Event(publicKey, url, method);
+  const unsignedEvent = createUnsignedNIP98Event(publicKey, url, method, kind);
   const signedEvent = await signNIP98Event(unsignedEvent, privateKey);
   return generateNIP98Header(signedEvent);
 }

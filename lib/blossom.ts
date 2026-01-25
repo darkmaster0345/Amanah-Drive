@@ -275,9 +275,9 @@ export class BlossomClient {
           size: encryptedChunk.byteLength,
         });
 
-        // 3. Generate NIP-98 Auth Header (with NIP-07 signing OR private key fallback)
+        // 3. Generate Blossom Auth Header (kind 24242)
         // CRITICAL: The URL in the 'u' tag must match the endpoint EXACTLY
-        const authHeader = await createAuthHeader(this.publicKey, UPLOAD_SERVER, 'PUT', privateKey);
+        const authHeader = await createAuthHeader(this.publicKey, UPLOAD_SERVER, 'PUT', privateKey, 24242);
 
         // 4. Prepare FormData
         const formData = new FormData();
