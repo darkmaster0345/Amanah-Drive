@@ -99,7 +99,7 @@ export function EncryptionUploader({
       await new Promise(r => setTimeout(r, 500))
       setStage('uploading')
 
-      const blossomClient = createBlossomClient('https://nostr.build/api/v2/upload/blossom', undefined, publicKey)
+      const blossomClient = createBlossomClient('https://blossom.nostr.build', undefined, publicKey)
 
       const uploadResult = await blossomClient.uploadChunkedFile(
         fileData,

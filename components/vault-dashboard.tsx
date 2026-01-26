@@ -132,7 +132,7 @@ export function VaultDashboard({ publicKey, onLogout }: VaultDashboardProps) {
       const { key } = await deriveKeyFromPassword(password);
 
       // 2. Initialize Blossom Client
-      const blossomClient = createBlossomClient('https://nostr.build/api/v2/upload/blossom', undefined, publicKey);
+      const blossomClient = createBlossomClient('https://blossom.nostr.build', undefined, publicKey);
 
       // 3. Download and Decrypt
       const fileData = await blossomClient.downloadChunkedFile(

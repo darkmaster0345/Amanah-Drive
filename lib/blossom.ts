@@ -248,7 +248,8 @@ export class BlossomClient {
     const chunks: ChunkUploadResponse[] = [];
 
     // CRITICAL: We strictly target the official Blossom subdomain
-    const UPLOAD_SERVER = 'https://blossom.nostr.build/upload';
+    // Target the upload endpoint on the configured server
+    const UPLOAD_SERVER = `${this.serverUrl}/upload`;
 
     // Validate public key early
     if (!this.publicKey) {
@@ -310,11 +311,13 @@ export class BlossomClient {
           });
 
           // Store successful chunk info
+          const downloadUrl = responseData.url || `${this.serverUrl}/${chunkHash}`;
+
           chunks.push({
             chunkIndex: i,
             hash: chunkHash,
             size: encryptedChunk.byteLength,
-            url: responseData.url || `${UPLOAD_SERVER}/${chunkHash}`,
+            url: downloadUrl,
           });
 
           onChunkProgress?.(i + 1, totalChunks);
