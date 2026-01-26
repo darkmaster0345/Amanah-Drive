@@ -55,14 +55,22 @@ export function createUnsignedNIP98Event(
   method: string,
   kind: number = 27235
 ): UnsignedNIP98Event {
+  const tags = [
+    ['u', url],
+    ['method', method.toUpperCase()],
+  ];
+
+  // Blossom (kind 24242) requires an expiration tag to prevent replay attacks
+  if (kind === 24242) {
+    const oneHourFromNow = Math.floor(Date.now() / 1000) + 3600;
+    tags.push(['expiration', oneHourFromNow.toString()]);
+  }
+
   return {
     kind,
     pubkey: publicKey,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['u', url],
-      ['method', method.toUpperCase()],
-    ],
+    tags,
     content: '',
   };
 }
