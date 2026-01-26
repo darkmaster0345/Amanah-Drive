@@ -60,8 +60,9 @@ export function createUnsignedNIP98Event(
     ['method', method.toUpperCase()],
   ];
 
-  // Blossom (kind 24242) requires an expiration tag to prevent replay attacks
+  // Blossom (kind 24242) requires action tag and expiration tag per BUD-02 spec
   if (kind === 24242) {
+    tags.push(['t', 'upload']); // REQUIRED: Action tag for Blossom upload authorization
     const oneHourFromNow = Math.floor(Date.now() / 1000) + 3600;
     tags.push(['expiration', oneHourFromNow.toString()]);
   }
