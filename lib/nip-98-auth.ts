@@ -53,7 +53,8 @@ export function createUnsignedNIP98Event(
   publicKey: string,
   url: string,
   method: string,
-  kind: number = 27235
+  kind: number = 27235,
+  sha256?: string
 ): UnsignedNIP98Event {
   const tags = [
     ['u', url],
@@ -63,6 +64,12 @@ export function createUnsignedNIP98Event(
   // Blossom (kind 24242) requires action tag and expiration tag per BUD-02 spec
   if (kind === 24242) {
     tags.push(['t', 'upload']); // REQUIRED: Action tag for Blossom upload authorization
+
+    // Blossom REQUIRES the sha256 of the blob in the 'x' tag for uploads
+    if (sha256) {
+      tags.push(['x', sha256]);
+    }
+
     const oneHourFromNow = Math.floor(Date.now() / 1000) + 3600;
     tags.push(['expiration', oneHourFromNow.toString()]);
   }
@@ -118,9 +125,10 @@ export async function createAuthHeader(
   url: string,
   method: string,
   privateKey?: Uint8Array,
-  kind: number = 27235
+  kind: number = 27235,
+  sha256?: string
 ): Promise<string> {
-  const unsignedEvent = createUnsignedNIP98Event(publicKey, url, method, kind);
+  const unsignedEvent = createUnsignedNIP98Event(publicKey, url, method, kind, sha256);
   const signedEvent = await signNIP98Event(unsignedEvent, privateKey);
   return generateNIP98Header(signedEvent);
 }

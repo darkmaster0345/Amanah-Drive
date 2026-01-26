@@ -278,7 +278,7 @@ export class BlossomClient {
 
         // 3. Generate Blossom Auth Header (kind 24242)
         // CRITICAL: The URL in the 'u' tag must match the endpoint EXACTLY
-        const authHeader = await createAuthHeader(this.publicKey, UPLOAD_SERVER, 'PUT', privateKey, 24242);
+        const authHeader = await createAuthHeader(this.publicKey, UPLOAD_SERVER, 'PUT', privateKey, 24242, chunkHash);
 
         // 4. Prepare FormData
         const formData = new FormData();
