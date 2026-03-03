@@ -1,398 +1,290 @@
-# Vault - Decentralized Storage PWA
+# 📁 Amanah Drive – Privacy-First Cloud Storage for the Ummah
 
-A Progressive Web App for secure, encrypted file storage powered by **Nostr** and **Blossom** protocols. Built for privacy-conscious users who want complete control over their data.
+**Amanah Drive** is an open-source, privacy-first cloud storage alternative to Google Drive, built specifically for the Ummah.  
+It uses **nostr.build** for free blob storage and **client-side encryption** to keep your data completely private — even in a public gallery.
 
-## Core Features
-
-✅ **End-to-End Encrypted** - All files encrypted client-side before leaving your device  
-✅ **Local-First Architecture** - SQLite WASM + Origin Private File System (OPFS) for blazing-fast offline access  
-✅ **Nostr Identity** - Use your Nostr keypair (secp256k1) for authentication and sharing  
-✅ **Blossom Integration** - Decentralized blob storage with optional server-side backup  
-✅ **Zero-Knowledge Design** - Servers cannot read your encrypted data  
-✅ **Mobile-Ready PWA** - Install as app on any device, works offline  
-✅ **NIP-94 Metadata** - Standard Nostr file metadata for interoperability  
-✅ **Permission Sharing** - Share encrypted files with other Nostr users via NIP-59 Gift Wraps
-
-## Architecture Overview
-
-### Security Layers
-
-```
-┌─────────────────────────────────────────────┐
-│     User Interface (React/Next.js 16)       │
-├─────────────────────────────────────────────┤
-│  Client-Side Encryption (Web Crypto API)   │ ← All encryption happens here
-│  - AES-GCM for files                        │
-│  - PBKDF2 for key derivation                │
-├─────────────────────────────────────────────┤
-│  Local Storage Layer                        │
-│  - SQLite WASM + OPFS (encrypted at rest)   │
-├─────────────────────────────────────────────┤
-│  Nostr Protocol (NIP-94, NIP-59)            │ ← Metadata publishing
-│  - File metadata to relays                  │
-│  - Permission tokens via Gift Wraps         │
-├─────────────────────────────────────────────┤
-│  Blossom Protocol (Blob Storage)            │ ← Encrypted blobs only
-│  - Decentralized file hosting               │
-│  - SHA-256 verified downloads               │
-└─────────────────────────────────────────────┘
-```
-
-### Data Flow
-
-1. **Upload**: File → Client Encryption (AES-GCM) → Local DB + Blossom Server
-2. **Metadata**: File Hash + Key Hash → NIP-94 Event → Nostr Relays
-3. **Sharing**: Encryption Capability → NIP-59 Gift Wrap → Recipient
-4. **Download**: Blossom Server → Client Decryption → User Access
-
-## Technology Stack
-
-### Frontend
-- **React 19.2** with Next.js 16 App Router
-- **Tailwind CSS v4** with semantic design tokens
-- **shadcn/ui** components with Amanah-inspired design
-- **Recharts** for analytics visualizations
-
-### Core Libraries
-- **Web Crypto API** for encryption (AES-GCM, PBKDF2, SHA-256)
-- **SQLite WASM** + **OPFS** for local storage
-- **Nostr SDK** (compatible) for protocol integration
-- **Blossom Client** for distributed blob storage
-
-### Encryption Specs
-- **File Encryption**: AES-256-GCM
-- **Key Derivation**: PBKDF2 with SHA-256 (100,000 iterations)
-- **Nonce**: 96-bit random IV per file
-- **Authentication**: GCM tag for integrity verification
-
-## Getting Started
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/vault.git
-cd vault
-
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-
-# Build for production
-npm run build
-npm start
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### First Run
-
-1. **Create Account**: Generate new Nostr keypair with a master password
-2. **Create Vault**: Organize files into encrypted vaults
-3. **Upload Files**: Files are encrypted before storage
-4. **View Dashboard**: Monitor storage, encryption status, file analytics
-5. **Share**: Generate shareable links with time-limited access
-
-## API Reference
-
-### Encryption Module (`/lib/encryption.ts`)
-
-```typescript
-// Derive encryption key from password
-const { key, salt } = await deriveKeyFromPassword(password);
-
-// Encrypt file
-const encrypted = await encryptData(fileContent, key);
-
-// Decrypt file
-const decrypted = await decryptData(encrypted, key);
-
-// Hash data for verification
-const hash = await hashString(data);
-
-// Generate file-specific key
-const fileKey = await generateFileKey(masterKey, fileId);
-```
-
-### Database Module (`/lib/db.ts`)
-
-```typescript
-// Add file to vault
-await db.addFile(storageFile);
-
-// List files in vault
-const files = await db.getFilesByVault(vaultId);
-
-// Grant access permission
-await db.grantPermission(permission);
-
-// Get total storage usage
-const totalSize = await db.getTotalSize();
-```
-
-### Nostr Integration (`/lib/nostr.ts`)
-
-```typescript
-// Create NIP-94 file metadata event
-const event = createFileMetadataEvent(publicKey, {
-  url: "blob:file-id",
-  mimeType: "application/pdf",
-  sha256Hash: "...",
-  size: 1024,
-  encryptionKeyHash: "...",
-  blossomServer: "https://cdn.example.com",
-  vaultId: "vault-id",
-});
-
-// Publish to relays
-await relayManager.publishEvent(event);
-
-// Create sharing token (Gift Wrap)
-const giftWrap = createGiftWrapEvent(
-  senderPublicKey,
-  recipientPublicKey,
-  encryptedCapability
-);
-```
-
-### Blossom Client (`/lib/blossom.ts`)
-
-```typescript
-// Create client
-const client = createBlossomClient("https://cdn.example.com");
-
-// Upload encrypted blob
-const response = await client.uploadBlob(
-  encryptedData,
-  fileName,
-  encryptionKeyHash
-);
-
-// Download blob (stays encrypted)
-const encrypted = await client.downloadBlob(blobUrl);
-
-// Delete blob
-await client.deleteBlob(sha256Hash);
-```
-
-## Key Features Deep Dive
-
-### Local-First Storage
-
-Files are stored in your browser using SQLite WASM + Origin Private File System (OPFS):
-- **Fast**: Direct access without network latency
-- **Offline**: Works completely offline
-- **Persistent**: Data survives browser refresh
-- **Private**: Never sent to servers without your consent
-
-### End-to-End Encryption
-
-All encryption happens in your browser before data leaves:
-- **Zero-Knowledge**: We literally cannot read your data
-- **Client-Side Keys**: Private keys never leave your device
-- **Verified**: SHA-256 hashing ensures data integrity
-- **Standards**: AES-256-GCM is military-grade encryption
-
-### Nostr Integration
-
-Uses industry-standard Nostr protocols for identity and sharing:
-- **NIP-94**: File metadata standard for interoperability
-- **NIP-59**: Gift wraps for encrypted direct messages
-- **secp256k1**: Same keys used across Nostr ecosystem
-- **Relays**: Your metadata, not your files
-
-### Blossom Protocol
-
-Optional distributed blob storage:
-- **Decentralized**: No single point of failure
-- **Encrypted**: Only encrypted files uploaded
-- **Verified**: Content-addressed by SHA-256
-- **Redundant**: Can use multiple servers
-
-## Configuration
-
-### Environment Variables
-
-```env
-# Optional: Custom Nostr relays
-NEXT_PUBLIC_NOSTR_RELAYS=wss://relay1.example.com,wss://relay2.example.com
-
-# Optional: Blossom server
-NEXT_PUBLIC_BLOSSOM_SERVER=https://cdn.example.com
-
-# Optional: Analytics
-NEXT_PUBLIC_ANALYTICS_ID=your-analytics-id
-```
-
-### Customize Theme
-
-Edit `/app/globals.css` to change colors and styling:
-
-```css
-:root {
-  --primary: oklch(0.54 0.14 32);    /* Warm brown */
-  --accent: oklch(0.62 0.12 45);     /* Earth tone */
-  --background: oklch(0.98 0.01 70); /* Cream */
-}
-```
-
-## Security Considerations
-
-### ✅ What's Encrypted
-
-- File contents (AES-256-GCM)
-- File metadata (optional, via NIP-59)
-- Sharing tokens (capability-based)
-
-### ⚠️ What's Not Encrypted
-
-- File names (stored locally only)
-- Access logs (local timestamps)
-- Your Nostr public key (it's public!)
-
-### 🛡️ Best Practices
-
-1. Use a strong master password (20+ characters)
-2. Store your Nostr public key backup separately
-3. Enable browser security features (no VPN/proxy needed)
-4. Keep your device OS updated
-5. Audit relays you trust
-
-## Development
-
-### Project Structure
-
-```
-vault/
-├── app/                    # Next.js App Router
-│   ├── layout.tsx         # Root layout with PWA
-│   ├── page.tsx           # Authentication flow
-│   └── globals.css        # Design tokens & theme
-├── components/            # React components
-│   ├── auth-setup.tsx     # Login/signup UI
-│   ├── vault-dashboard.tsx # Main interface
-│   ├── file-upload-area.tsx
-│   ├── file-viewer.tsx
-│   ├── dashboard.tsx      # Analytics
-│   └── vault-list.tsx
-├── lib/                   # Core business logic
-│   ├── encryption.ts      # Web Crypto API wrapper
-│   ├── db.ts              # SQLite interface
-│   ├── nostr.ts           # NIP-94, NIP-59
-│   ├── blossom.ts         # Blob storage client
-│   └── utils.ts           # Helpers
-├── public/                # Static assets
-│   └── manifest.json      # PWA manifest
-└── package.json
-```
-
-### Running Tests
-
-```bash
-# Unit tests (encryption, hashing)
-npm run test
-
-# Type checking
-npm run type-check
-
-# Linting
-npm run lint
-
-# Build check
-npm run build
-```
-
-### Contributing
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open Pull Request
-
-Follow the code style:
-- Use TypeScript
-- Component-based architecture
-- Meaningful commit messages
-- Test coverage for crypto functions
-
-## Deployment
-
-### Deploy to Vercel
-
-```bash
-# Connect your GitHub repo to Vercel
-# Auto-deploys on push to main
-
-# Or manually:
-npm install -g vercel
-vercel
-```
-
-### Deploy to Self-Hosted
-
-```bash
-# Build static export
-npm run build
-
-# Deploy the ./out directory to your server
-# (Nginx, Apache, etc.)
-```
-
-### PWA Installation
-
-1. Visit `https://yourdomain.com`
-2. Click "Install" button in your browser
-3. App installs to home screen
-4. Works offline with local encryption
-
-## Roadmap
-
-- [ ] SQLite WASM with actual OPFS support
-- [ ] Blossom server SDK integration
-- [ ] NIP-94 relay indexing
-- [ ] Browser extension
-- [ ] Native mobile apps
-- [ ] File versioning & recovery
-- [ ] Collaborative vault sharing
-- [ ] Full-text search over encrypted data
-- [ ] Image thumbnail preview (client-side)
-- [ ] File compression before encryption
-
-## License
-
-MIT License - See LICENSE file for details
-
-
-
-## Acknowledgments
-
-- Built with [Next.js](https://nextjs.org/)
-- Styled with [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/)
-- Icons by [Lucide React](https://lucide.dev/)
-- Charts by [Recharts](https://recharts.org/)
-- Nostr protocol: https://github.com/nostr-protocol/nostr
-- Blossom protocol: https://github.com/hzrd149/blossom
-
-## FAQ
-
-**Q: Can anyone see my files?**  
-A: No. Files are encrypted client-side. The server only sees encrypted blobs.
-
-**Q: What if I lose my password?**  
-A: Your password derives your encryption keys. Lost password = lost access. Store it securely!
-
-**Q: Can Vault employees read my data?**  
-A: We have zero knowledge of your data. There's literally no mechanism to access it.
-
-**Q: Is it truly FOSS?**  
-A: Yes. 100% open source under MIT license. Fork, audit, self-host!
-
-**Q: How is this different from regular cloud storage?**  
-A: Traditional cloud storage encrypts in transit but decrypts on servers. Vault never decrypts on servers.
+> **Tagline:** *Your Data. Your Trust. Your Amanah.*
 
 ---
 
-**Made with 🔐 for privacy-first storage**
+## 🧠 Core Philosophy
+
+| Principle | Meaning |
+|----------|---------|
+| **🔐 Privacy First** | Files encrypted on YOUR device before upload |
+| **📦 Blob Storage** | Files split into chunks, stored on nostr.build |
+| **🧩 Open Source** | Transparent, auditable, community-driven |
+| **🛡️ Zero Trust** | Even the server cannot read your files |
+| **🤲 Sadaqah Jariyah** | Built for the Ummah, free forever |
+
+---
+
+## 🧱 How It Works (Overview)
+
+```
+User selects file
+        ↓
+File encrypted with AES-256 (client-side)
+        ↓
+Encrypted blob uploaded to nostr.build (free, unlimited)
+        ↓
+Public gallery sees only unreadable binary data
+        ↓
+User downloads → Decrypts locally → Original file restored
+```
+
+---
+
+## 🗂️ Project Structure
+
+```
+amanah-drive/
+├── src/
+│   ├── components/          # Reusable UI components
+│   ├── pages/                # App pages (Dashboard, Upload, etc.)
+│   ├── utils/
+│   │   ├── encryption.ts     # AES-256 encryption logic
+│   │   ├── nostrBuild.ts     # nostr.build API integration
+│   │   └── storage.ts        # Local key storage
+│   ├── hooks/                 # Custom React hooks
+│   ├── types/                 # TypeScript types
+│   └── App.tsx
+├── public/
+├── docs/                      # Documentation
+├── .env.example
+├── package.json
+├── tailwind.config.js
+├── tsconfig.json
+└── README.md (this file)
+```
+
+---
+
+## 🔐 Encryption Flow (Detailed)
+
+### 1. Upload Flow
+
+```javascript
+async function uploadPrivateFile(file, userId) {
+  // 1. Generate unique key for this file
+  const fileKey = await generateAESKey();
+
+  // 2. Encrypt file client-side
+  const encryptedBlob = await encryptAES(file, fileKey);
+
+  // 3. Upload to nostr.build (free)
+  const response = await fetch('https://nostr.build/api/upload', {
+    method: 'POST',
+    body: encryptedBlob,
+    headers: { 'Content-Type': 'application/octet-stream' }
+  });
+
+  const { url } = await response.json();
+
+  // 4. Save file metadata + encrypted key (user's key encrypted with their password)
+  await saveFileRecord(userId, url, file.name, encryptKeyForUser(fileKey));
+}
+```
+
+### 2. Download Flow
+
+```javascript
+async function downloadAndViewFile(fileRecord, userPassword) {
+  // 1. Decrypt the file key using user's password
+  const fileKey = decryptKeyForUser(fileRecord.encryptedKey, userPassword);
+
+  // 2. Download encrypted blob from nostr.build
+  const encryptedBlob = await fetch(fileRecord.url);
+
+  // 3. Decrypt blob using file key
+  const originalFile = await decryptAES(encryptedBlob, fileKey);
+
+  // 4. Present to user
+  return originalFile;
+}
+```
+
+---
+
+## 🆓 Storage: nostr.build Free Tier
+
+| Feature | Limit |
+|--------|-------|
+| **Total storage** | Unlimited |
+| **Per file size** | Up to 100MB |
+| **Privacy (free tier)** | ❌ Public gallery |
+| **Our solution** | ✅ Encrypt before upload |
+| **Cost** | $0 forever |
+
+> ⚠️ Even though free uploads are public, encryption makes them unreadable to anyone without the key.
+
+---
+
+## 🔑 Key Management Strategy
+
+We **never** store plaintext keys.
+
+| Key Type | Where Stored | How |
+|---------|--------------|-----|
+| **User Master Key** | User's device only | Never sent to server |
+| **File Encryption Keys** | Database (encrypted) | Encrypted with user's master key |
+| **Recovery Key** | User's backup phrase | Printed/saved during signup |
+
+### Key Recovery Flow
+
+```
+User forgets password
+        ↓
+Enter backup phrase
+        ↓
+Derive master key
+        ↓
+Decrypt all file keys
+        ↓
+Access restored
+```
+
+---
+
+## 🧪 Phase 1 MVP Features (Month 1–2)
+
+- ✅ User signup/login (Nostr keys)
+- ✅ Upload file (encrypted) to nostr.build
+- ✅ Download + decrypt file
+- ✅ List user's files
+- ✅ Delete file
+- ✅ Basic UI (Tailwind + shadcn/ui)
+
+---
+
+## 🚀 Phase 2 Features (Month 3–4)
+
+- 🔜 Folder support
+- 🔜 File sharing (encrypted links)
+- 🔜 Multiple file upload
+- 🔜 Progress indicators
+- 🔜 Mobile responsive
+
+---
+
+## 🛸 Phase 3 Features (Future)
+
+- 🔮 File version history
+- 🔮 Trash/recovery
+- 🔮 Search (encrypted index)
+- 🔮 Desktop app (Tauri)
+- 🔮 Integration with Noor Connect
+- 🔮 Integration with Hidayah OS
+
+---
+
+## 🧰 Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 18 + TypeScript |
+| **Build Tool** | Vite |
+| **Styling** | Tailwind CSS + shadcn/ui |
+| **Encryption** | Web Crypto API / libsodium |
+| **Storage** | nostr.build API |
+| **State** | Zustand |
+| **Routing** | React Router v6 |
+| **Auth** | Nostr keys (NIP-07) |
+
+---
+
+## 🧪 Environment Variables
+
+Create a `.env` file:
+
+```env
+VITE_NOSTR_BUILD_API=https://nostr.build/api
+VITE_APP_NAME=Amanah Drive
+VITE_DEFAULT_STORAGE_LIMIT=100000000  # 100MB per file
+```
+
+---
+
+## 🧑‍💻 Development Setup
+
+```bash
+# 1. Clone repo
+git clone https://github.com/darkmaster0345/amanah-drive.git
+cd amanah-drive
+
+# 2. Install dependencies
+npm install
+
+# 3. Run dev server
+npm run dev
+
+# 4. Build for production
+npm run build
+```
+
+---
+
+## 🧪 Testing Checklist (Before Launch)
+
+- [ ] Upload file < 100MB → success
+- [ ] Upload file > 100MB → error (with message)
+- [ ] Download file → decrypts correctly
+- [ ] File list shows correctly
+- [ ] Delete file → removes from list
+- [ ] Logout → cannot access files
+- [ ] Login with different user → sees own files only
+- [ ] nostr.build URL returns encrypted data, not viewable image
+
+---
+
+## 🕌 Why "Amanah"?
+
+The word **Amanah** (أمانة) means *trust, honesty, responsibility*.
+
+In Islam, we believe all data entrusted to us must be protected.  
+Google, Dropbox, and others treat your data as *their* asset.  
+Amanah Drive treats your data as *your* amanah.
+
+> *"Indeed, Allah commands you to render trusts to whom they are due."*  
+> — Quran 4:58
+
+---
+
+## 🤝 How to Contribute
+
+We welcome all skill levels!
+
+### Priority Needs:
+- 🔧 React/TypeScript developers
+- 🔐 Security/crypto reviewers
+- 🎨 UI/UX designers
+- 📖 Documentation writers
+- 🧪 Testers
+
+### Getting Started:
+1. Fork the repo
+2. Create a feature branch
+3. Submit a PR
+4. Join discussions in Issues
+
+---
+
+## 📜 License
+
+**MIT License** — Fully open source, forever.
+
+---
+
+## 🙏 Dua
+
+> *Rabbana taqabbal minna innaka antas Sameeul Aleem*  
+> *"Our Lord, accept from us. Indeed, You are the All-Hearing, the All-Knowing."*
+
+---
+
+**Built with 🤲 by a solo developer for the Ummah.**  
+[GitHub](https://github.com/darkmaster0345) · [Report Bug](../../issues) · [Request Feature](../../issues)
+
+---
+
+This README gives you a **complete roadmap** for when you start coding. Want me to create the actual `encryption.ts` file with real code next?
